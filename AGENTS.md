@@ -42,7 +42,7 @@ Guide for AI coding agents (and a cheat-sheet for humans). Read [README.md](READ
 
 **Bridge side (whatsapp-web.js 1.34.7 vs current WhatsApp Web)**
 - Message keys expose `$1` instead of `_serialized`; `apply.js` adds fallbacks. Media download needs an explicit `mimetype`. Outgoing media must not spread the media model's own properties (`parent`, `collection`, `__x_*`).
-- `fetchMessages` is not chronological: the server over-fetches (limit x3, max 200), sorts by timestamp and keeps the newest N.
+- `fetchMessages` is not chronological: the server over-fetches (limit x3, max 600; limit itself capped at 300), sorts by timestamp and keeps the newest N.
 - Drop messages whose `viewMode === 'HIDDEN'` (internal, type `unknown`) and type `album`. **Do not filter on `invis`**: real call logs and messages carry it.
 - Use `node:sqlite` (Node 22+). Data lives in `server/data/` (`DATA_DIR` env to move it). Env: `PORT` (3000), `HOST` (0.0.0.0).
 - Tokens are bearer tokens stored as SHA-256; pairing codes are 6 digits, short-lived.

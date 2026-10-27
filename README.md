@@ -22,13 +22,18 @@ Your main WhatsApp stays on your phone of choice. The Q20 is just another linked
 - Videos: download and play
 - Send photos from the camera or gallery
 - Background notifications (polling every 15 s); archived chats stay silent
+- Scroll back through older messages ("Load older messages", up to 300)
 - Pair by scanning a QR code shown on the bridge's admin page
 
 ## What does not (yet)
 
-- Calls, sending voice notes, scrolling back to older messages, link previews
+- Calls, sending voice notes, link previews
 - Exposure control in the in-app camera: the Q20's Android camera layer reports no exposure range
 - Anything away from home: the bridge only accepts private-network addresses (see Security)
+
+## Screenshots
+
+_Screenshots to be added._ <!-- TODO(author): chat list, a conversation, the admin page. Blur or crop names, numbers and photos. -->
 
 ## Requirements
 
@@ -64,6 +69,14 @@ Your main WhatsApp stays on your phone of choice. The Q20 is just another linked
 
 Updating the app later: bump `android/VERSION`, run `./android/build.sh --publish`, install the new APK over the old one (same package id and signing key, so data is kept). Keep `android/keys/debug.jks`; a different key means uninstall first.
 
+## Troubleshooting
+
+- **Pairing fails or the app says it can't connect:** use `http://`, never `https://`, and the computer's LAN address (not `localhost`). The phone and computer must be on the same Wi-Fi, and the computer's firewall must allow port 3000.
+- **Sideloading the APK:** on the BlackBerry enable *Settings, Security and Privacy, Development Mode* so Android APKs may be installed, then open the APK from the browser download.
+- **"Not ready" / no chats:** the bridge is not linked to WhatsApp yet, or is still starting. Check the state on `http://localhost:3000/admin`.
+- **Installing over an old version fails:** the signing key changed. Uninstall the old app first (you will pair again).
+- **Voice notes silent:** they are converted on the bridge; check the bridge log for errors.
+
 ## Setup with AI
 
 Open this folder in an AI coding agent (Claude Code, Codex, Cursor, etc.) and say something like:
@@ -78,7 +91,9 @@ Open this folder in an AI coding agent (Claude Code, Codex, Cursor, etc.) and sa
 - The API requires a per-device bearer token (stored only as a SHA-256 hash), is limited to private-network client addresses, and `/admin` only answers on loopback. It speaks plain HTTP, so keep it on a network you trust. Do not port-forward it.
 - Revoke a phone any time from the admin page. Pairing codes are single-use.
 - The drop-box PIN is a convenience lock, not strong security. Use it on your home Wi-Fi only.
-- The APK is signed with a throwaway local key (`android/keys/`, git-ignored; password defaults to `android` unless you set `KS_PASS`).
+- The APK is signed with a throwaway local key generated on your machine (`android/keys/`, git-ignored; password defaults to `android` unless you set `KS_PASS`). Nothing secret depends on it; it only identifies *your* builds for updates.
+- The bridge never needs to be reachable from the internet. Do not expose it with port-forwarding, a public tunnel or a cloud host: it has no HTTPS, and anyone who could pair or steal a token could read your messages. The drop-box has no private-network guard at all, so the same applies, and always set `--pin`.
+- Build the APK yourself rather than trusting a binary from a stranger. Any APK attached to a release was built from the tagged source with the author's own key; compare it with your own build if in doubt.
 
 ## Repository layout
 
@@ -103,6 +118,14 @@ This project stands on other people's work:
 
 "WhatsApp" is a trademark of Meta Platforms, Inc.; "BlackBerry" is a trademark of BlackBerry Limited. The launcher artwork used on the author's own phone is not included in this repository for that reason.
 
+## Contributing
+
+Issues and pull requests are welcome, especially test reports from other BB10 devices. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Disclaimer
+
+Provided as is, with no warranty. You are responsible for how you use your WhatsApp account. This project is not endorsed by or affiliated with WhatsApp, Meta, BlackBerry or any library author named above.
+
 ## License
 
-No license has been chosen yet, so all rights are reserved by default. Add a `LICENSE` file before accepting contributions or reuse.
+[GNU GPL v3.0](LICENSE). Third-party components keep their own licences (see Credits).

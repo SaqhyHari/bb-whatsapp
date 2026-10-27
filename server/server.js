@@ -196,8 +196,17 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: '64kb' }));
 
-const localOnly = (req, res, next) =>
-  isLoopback(req.socket.remoteAddress) ? next() : res.status(403).json({ error: 'admin is local only' });
+// Admin is loopback-only. The Host/Origin checks also stop a web page open in a browser on this
+// machine from driving it (cross-site requests, DNS rebinding).
+const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+function localOnly(req, res, next) {
+  if (!isLoopback(req.socket.remoteAddress)) return res.status(403).json({ error: 'admin is local only' });
+  if (!LOCAL_HOST.test(req.get('host') || '')) return res.status(403).json({ error: 'admin: bad host' });
+  const origin = req.get('origin');
+  if (origin && origin !== 'null' && !LOCAL_HOST.test(origin.replace(/^https?:\/\//, ''))) return res.status(403).json({ error: 'admin: bad origin' });
+  if (origin === 'null') return res.status(403).json({ error: 'admin: bad origin' });
+  next();
+}
 
 function auth(req, res, next) {
   const m = /^Bearer ([0-9a-f]{64})$/.exec(req.get('authorization') || '');
