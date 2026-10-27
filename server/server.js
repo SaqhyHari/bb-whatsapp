@@ -281,11 +281,11 @@ app.get('/api/chats', auth, ready, wrap(async (req, res) => {
 }));
 
 app.get('/api/chats/:chatId/messages', auth, ready, validChat, wrap(async (req, res) => {
-  const limit = Math.min(Number(req.query.limit) || 30, 100);
+  const limit = Math.min(Number(req.query.limit) || 30, 300); // the app pages back by raising the limit
   const chat = await client.getChatById(req.params.chatId);
   // WhatsApp Web's message collection isn't strictly chronological (history-synced call logs can sit
   // at the end), so a small limit can return the wrong slice. Over-fetch, sort, keep the newest.
-  const msgs = await chat.fetchMessages({ limit: Math.min(200, limit * 3) });
+  const msgs = await chat.fetchMessages({ limit: Math.min(600, limit * 3) });
   const out = [];
   for (const m of msgs) { const row = store(m); if (row) out.push(row); }
   out.sort((a, b) => a.ts - b.ts);

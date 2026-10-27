@@ -68,6 +68,12 @@ public class ChatActivity extends Activity {
     private boolean polling;
     private BaseAdapter adapter;
     private ListView list;
+    private TextView olderBtn;
+    private static final int OLDER_STEP = 40;
+    private static final int OLDER_MAX = 300;
+    private int shown = 40; // how many recent messages have been requested so far
+    private boolean olderBusy;
+    private boolean hasMore = true;
     private EditText input;
     private Button sendBtn;
     private TextView status;
@@ -113,6 +119,16 @@ public class ChatActivity extends Activity {
         list.setStackFromBottom(true);
         list.setTranscriptMode(ListView.TRANSCRIPT_MODE_ALWAYS_SCROLL);
         list.setCacheColorHint(Color.TRANSPARENT);
+        // header row at the very top of the conversation: tap to fetch older messages
+        LinearLayout olderWrap = new LinearLayout(this);
+        olderBtn = UI.text(this, "Load older messages", 14, UI.GREEN, true);
+        olderBtn.setGravity(Gravity.CENTER);
+        olderBtn.setPadding(0, UI.dp(this, 12), 0, UI.dp(this, 12));
+        olderBtn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { loadOlder(); }
+        });
+        olderWrap.addView(olderBtn, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        list.addHeaderView(olderWrap, null, false);
         adapter = new MsgAdapter();
         list.setAdapter(adapter);
         root.addView(list, UI.fill());
@@ -204,6 +220,47 @@ public class ChatActivity extends Activity {
                 sortAndShow();
                 status.setText("");
                 status.setVisibility(View.GONE);
+            }
+        });
+    }
+
+    /** Fetches another page of history and keeps the reader exactly where they were in the conversation. */
+    private void loadOlder() {
+        if (olderBusy || !hasMore) return;
+        olderBusy = true;
+        olderBtn.setText("Loading...");
+        final int want = Math.min(shown + OLDER_STEP, OLDER_MAX);
+        Bg.go(new Bg.Job() {
+            public Object run() throws Exception { return Api.messages(ChatActivity.this, chatId, want); }
+        }, new Bg.Done() {
+            public void done(Object result, Exception e) {
+                olderBusy = false;
+                if (isFinishing()) return;
+                if (e != null) {
+                    olderBtn.setText("Could not load: " + Api.why(e) + " (tap to retry)");
+                    return;
+                }
+                JSONArray a = (JSONArray) result;
+                int first = list.getFirstVisiblePosition();
+                View top = list.getChildAt(0);
+                int offset = top == null ? 0 : top.getTop();
+                int before = msgs.size();
+                for (int i = 0; i < a.length(); i++) add(a.optJSONObject(i));
+                int added = msgs.size() - before;
+                shown = want;
+                if (added == 0 || want >= OLDER_MAX) {
+                    hasMore = false;
+                    olderBtn.setText(added == 0 ? "Start of the conversation" : "Older messages limit reached");
+                    olderBtn.setClickable(false);
+                } else {
+                    olderBtn.setText("Load older messages");
+                }
+                list.setTranscriptMode(ListView.TRANSCRIPT_MODE_DISABLED); // don't jump to the bottom
+                sortAndShow();
+                list.setSelectionFromTop(first + added, offset);
+                Bg.MAIN.postDelayed(new Runnable() {
+                    public void run() { list.setTranscriptMode(ListView.TRANSCRIPT_MODE_ALWAYS_SCROLL); }
+                }, 400);
             }
         });
     }
