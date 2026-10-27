@@ -23,6 +23,11 @@ android/res/drawable*/ic_launcher.png
 # Files shared through the drop-box (photos, APKs) and the older-versions folder
 dropbox/shared/
 
+# Process ids, logs and the drop-box PIN written by scripts/bb.sh
+run/
+logs/
+dropbox/.pin
+
 # Local/OS/editor noise
 .DS_Store
 *.log

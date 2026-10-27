@@ -55,6 +55,11 @@ _Screenshots to be added._ <!-- TODO(author): chat list, a conversation, the adm
    PATH=../tools/node/bin:$PATH npm install
    PATH=../tools/node/bin:$PATH node server.js
    ```
+   Or let the helper run it as a background process that belongs to no terminal (logs in `logs/`):
+   ```bash
+   ./scripts/bb.sh start | stop | restart | status [bridge|dropbox]
+   ```
+   For the drop-box, put your PIN in `dropbox/.pin` (git-ignored) first.
 3. **Link WhatsApp**: open <http://localhost:3000/admin> on the same computer and scan the QR with your phone (WhatsApp, Settings, Linked devices). `/admin` only answers on `localhost`.
 4. **Build the app**:
    ```bash

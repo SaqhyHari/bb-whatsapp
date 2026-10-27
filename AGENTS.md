@@ -15,7 +15,7 @@ Guide for AI coding agents (and a cheat-sheet for humans). Read [README.md](READ
 ## Setup (what an agent should do)
 
 1. `./scripts/setup-tools.sh --accept-android-licenses` (macOS arm64; ask first). Else see README, Other platforms.
-2. `cd server && PATH=../tools/node/bin:$PATH npm install`, then `PATH=../tools/node/bin:$PATH node server.js` (run in the background; log to a scratch file).
+2. `cd server && PATH=../tools/node/bin:$PATH npm install`, then start the servers with `./scripts/bb.sh start` (or `restart` after code changes, `status` to check). It runs the bridge and drop-box as detached processes that survive the agent session ending; do not run them as the agent's own background tasks. The drop-box PIN comes from the git-ignored `dropbox/.pin`.
 3. The user scans the WhatsApp QR at `http://localhost:3000/admin` (agents cannot do this).
 4. `./android/build.sh --publish`, then `cd dropbox && python3 server.py --port 8000 --pin <pin>` so the phone can download the APK from `http://<lan-ip>:8000/?pin=<pin>`.
 5. The user pairs the phone: admin page, "Show pairing code", app "Scan QR".
