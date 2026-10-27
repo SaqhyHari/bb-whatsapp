@@ -18,7 +18,8 @@ Your main WhatsApp stays on your phone of choice. The Q20 is just another linked
 
 - Chat list with profile pictures, Chats / Archived tabs, unread counts
 - Edit your own text messages (press and hold, within WhatsApp's 15 minutes); send and receive text; photos and stickers shown inline; reply quotes; emoji picker
-- Voice notes: **play** them (the bridge converts Opus to WAV, because Android 4.3 can't play Opus)
+- Voice notes: **play** them (the bridge converts Opus to WAV, because Android 4.3 can't play Opus) and **send** them (the phone records plain audio, the bridge encodes Ogg Opus with Chromium's WebCodecs, no ffmpeg)
+- Delivery ticks on your own messages: clock, one tick (sent), two ticks (delivered), blue ticks (read)
 - Videos: download and play
 - Send photos from the camera or gallery
 - Background notifications (polling every 15 s); archived chats stay silent
@@ -27,7 +28,7 @@ Your main WhatsApp stays on your phone of choice. The Q20 is just another linked
 
 ## What does not (yet)
 
-- Calls, sending voice notes, link previews
+- Calls, link previews
 - Exposure control in the in-app camera: the Q20's Android camera layer reports no exposure range
 - Anything away from home: the bridge only accepts private-network addresses (see Security)
 

@@ -10,6 +10,8 @@ import android.content.Intent;
 import android.net.Uri;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.media.MediaPlayer;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -174,9 +176,21 @@ public class ChatActivity extends Activity {
             public void onClick(View v) { emojiPicker(); }
         });
         bar.addView(emojiBtn);
-        sendBtn = UI.button(this, "Send");
+        sendBtn = UI.button(this, "Voice"); // becomes "Send" as soon as there is text, like the mic button in WhatsApp
         sendBtn.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { send(); }
+            public void onClick(View v) {
+                if (input.getText().toString().trim().length() == 0) recordVoice();
+                else send();
+            }
+        });
+        input.addTextChangedListener(new TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+
+            public void onTextChanged(CharSequence s, int a, int b, int c) {}
+
+            public void afterTextChanged(Editable s) {
+                sendBtn.setText(s.toString().trim().length() == 0 ? "Voice" : "Send");
+            }
         });
         bar.addView(sendBtn);
         root.addView(bar, UI.wrap());
@@ -202,6 +216,14 @@ public class ChatActivity extends Activity {
         super.onPause();
         visible = false;
         stopAudio();
+        if (voice != null) { // leaving the screen abandons a recording in progress
+            Voice v = voice;
+            AlertDialog d = voiceDialog;
+            voice = null;
+            voiceDialog = null;
+            v.cancel();
+            if (d != null) d.dismiss();
+        }
         if (chatId != null && chatId.equals(openChat)) openChat = "";
         Bg.MAIN.removeCallbacks(tick);
     }
@@ -351,7 +373,8 @@ public class ChatActivity extends Activity {
         for (int i = 0; i < msgs.size(); i++) {
             JSONObject old = msgs.get(i);
             if (!old.optString("id").equals(id)) continue;
-            if (old.optString("body").equals(m.optString("body")) && isEdited(old) == isEdited(m)) return false;
+            if (old.optString("body").equals(m.optString("body")) && isEdited(old) == isEdited(m)
+                    && old.optInt("ack", -9) == m.optInt("ack", -9)) return false;
             msgs.set(i, m);
             return true;
         }
@@ -370,6 +393,83 @@ public class ChatActivity extends Activity {
             }
         });
         adapter.notifyDataSetChanged();
+    }
+
+    // ---------- voice messages ----------
+
+    private Voice voice;
+    private AlertDialog voiceDialog;
+
+    /** Records from the microphone in a small dialog; Send uploads it, Cancel throws it away. */
+    private void recordVoice() {
+        if (voice != null) return;
+        final Voice v = new Voice(new File(getCacheDir(), "voice.wav"));
+        try {
+            v.start();
+        } catch (Exception e) {
+            Toast.makeText(this, "Cannot record: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            return;
+        }
+        voice = v;
+        final TextView clockView = UI.text(this, "0:00", 30, Color.BLACK, true);
+        clockView.setGravity(Gravity.CENTER);
+        clockView.setPadding(0, UI.dp(this, 16), 0, UI.dp(this, 16));
+        final Runnable tickClock = new Runnable() {
+            public void run() {
+                if (voice != v) return;
+                int s = v.seconds();
+                clockView.setText(s / 60 + ":" + (s % 60 < 10 ? "0" : "") + s % 60);
+                if (v.full()) {
+                    voiceDialog.setTitle("Time limit reached");
+                    return;
+                }
+                Bg.MAIN.postDelayed(this, 250);
+            }
+        };
+        voiceDialog = new AlertDialog.Builder(this).setTitle("Recording...").setView(clockView)
+                .setPositiveButton("Send", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) { finishVoice(v, true); }
+                })
+                .setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) { finishVoice(v, false); }
+                })
+                .setOnCancelListener(new DialogInterface.OnCancelListener() {
+                    public void onCancel(DialogInterface d) { finishVoice(v, false); } // Back key
+                })
+                .create();
+        voiceDialog.setCanceledOnTouchOutside(false);
+        voiceDialog.show();
+        Bg.MAIN.postDelayed(tickClock, 250);
+    }
+
+    private void finishVoice(Voice v, boolean send) {
+        if (voice != v) return;
+        voice = null;
+        voiceDialog = null;
+        if (!send) {
+            v.cancel();
+            return;
+        }
+        final int secs = v.seconds();
+        final File wav = v.stop();
+        if (wav == null || secs < 1) {
+            Toast.makeText(this, "Recording too short", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Toast.makeText(this, "Sending voice message...", Toast.LENGTH_SHORT).show();
+        Bg.go(new Bg.Job() {
+            public Object run() throws Exception { return Api.sendVoice(ChatActivity.this, chatId, wav); }
+        }, new Bg.Done() {
+            public void done(Object result, Exception e) {
+                if (isFinishing()) return;
+                if (e != null) {
+                    Toast.makeText(ChatActivity.this, "Voice message not sent: " + Api.why(e), Toast.LENGTH_LONG).show();
+                    return;
+                }
+                JSONObject m = (JSONObject) result;
+                if (m != null && m.has("type") && add(m)) sortAndShow();
+            }
+        });
     }
 
     // ---------- sending ----------
@@ -816,7 +916,19 @@ public class ChatActivity extends Activity {
             boolean today = day.format(when).equals(day.format(new Date()));
             TextView time = UI.text(c, (isEdited(m) ? "edited  " : "") + (today ? clock : dated).format(when), 11, UI.GREY, false);
             time.setGravity(Gravity.RIGHT);
-            b.addView(time);
+            if (mine && m.has("ack") && !m.isNull("ack")) { // delivery ticks next to the time
+                LinearLayout foot = new LinearLayout(c);
+                foot.setOrientation(LinearLayout.HORIZONTAL);
+                foot.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+                foot.addView(time);
+                TickView ticks = new TickView(c, m.optInt("ack"));
+                LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                tp.leftMargin = UI.dp(c, 4);
+                foot.addView(ticks, tp);
+                b.addView(foot, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            } else {
+                b.addView(time);
+            }
             wrap.addView(b);
             return wrap;
         }

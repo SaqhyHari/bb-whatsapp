@@ -13,6 +13,7 @@ const QRCode = require('qrcode');
 const { DatabaseSync } = require('node:sqlite');
 require('./patches/apply');
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const { wavToOggOpus } = require('./voice');
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -65,16 +66,19 @@ try { db.exec('ALTER TABLE messages ADD COLUMN raw TEXT'); } catch (_) { /* alre
 db.exec("DELETE FROM messages WHERE type IN ('unknown', 'album')"); // hidden/container rows stored earlier
 try { db.exec('ALTER TABLE messages ADD COLUMN quoted TEXT'); } catch (_) { /* already there */ }
 try { db.exec('ALTER TABLE messages ADD COLUMN meta TEXT'); } catch (_) { /* already there */ }
+try { db.exec('ALTER TABLE messages ADD COLUMN ack INTEGER'); } catch (_) { /* already there */ }
 const q = {
   // Re-fetched history refreshes type/body/raw but never touches seq or live.
   insertMsg: db.prepare(`INSERT INTO messages
-    (wa_id, chat_id, from_me, sender, body, type, ts, has_media, live, raw, quoted, meta)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (wa_id, chat_id, from_me, sender, body, type, ts, has_media, live, raw, quoted, meta, ack)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(wa_id) DO UPDATE SET type = excluded.type, body = excluded.body,
-      has_media = excluded.has_media, raw = excluded.raw, quoted = excluded.quoted, meta = excluded.meta`),
+      has_media = excluded.has_media, raw = excluded.raw, quoted = excluded.quoted, meta = excluded.meta,
+      ack = COALESCE(excluded.ack, ack)`),
   fromMeByStanza: db.prepare('SELECT from_me FROM messages WHERE wa_id LIKE ? LIMIT 1'),
   since: db.prepare('SELECT * FROM messages WHERE seq > ? AND live = 1 ORDER BY seq ASC LIMIT 200'),
   delMsg: db.prepare('DELETE FROM messages WHERE wa_id = ?'),
+  metaOf: db.prepare('SELECT meta FROM messages WHERE wa_id = ?'),
   maxSeq: db.prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM messages'),
   deviceByHash: db.prepare('SELECT * FROM devices WHERE token_hash = ?'),
   addDevice: db.prepare('INSERT INTO devices (id, name, token_hash, created) VALUES (?, ?, ?, ?)'),
@@ -114,6 +118,18 @@ function restoreEdited(m, body) {
   q.delMsg.run(m.id._serialized);
   return store(m, true);
 }
+// Ticks: WhatsApp reports delivery/read state changes of your own messages. Stored again as a new row so
+// polling clients notice (the same trick as edits).
+client.on('message_ack', (m, ack) => {
+  try {
+    if (!m.fromMe || !Number.isInteger(ack)) return;
+    m.ack = ack;
+    const prev = q.metaOf.get(m.id._serialized);
+    if (prev && prev.meta && JSON.parse(prev.meta).edited) m._edited = true; // deleting the row would forget it
+    q.delMsg.run(m.id._serialized);
+    store(m, true);
+  } catch (e) { console.error('ack event failed:', e.message); }
+});
 client.on('message_edit', (m, newBody) => {
   try { restoreEdited(m, newBody); } catch (e) { console.error('edit event failed:', e.message); }
 });
@@ -174,9 +190,14 @@ function store(m, live = false) {
     raw: m._data ? `${m._data.type || ''}${m._data.subtype ? ':' + m._data.subtype : ''}` : '',
     quoted: quotedOf(m),
     meta: metaOf(m),
+    // delivery state of your own messages: 0 sending, 1 sent, 2 delivered, 3 read, 4 played, -1 failed
+    ack: m.fromMe && Number.isInteger(m.ack) ? m.ack : null,
   };
+  // an "edited" mark we already know about must survive when WhatsApp's data for the message doesn't carry it
+  const prev = q.metaOf.get(row.id);
+  if (prev && prev.meta && !(row.meta && row.meta.edited) && JSON.parse(prev.meta).edited) row.meta = { ...(row.meta || {}), edited: true };
   q.insertMsg.run(row.id, row.chatId, row.fromMe ? 1 : 0, row.sender, row.body, row.type, row.ts, row.hasMedia ? 1 : 0, live ? 1 : 0, row.raw,
-    row.quoted ? JSON.stringify(row.quoted) : null, row.meta ? JSON.stringify(row.meta) : null);
+    row.quoted ? JSON.stringify(row.quoted) : null, row.meta ? JSON.stringify(row.meta) : null, row.ack);
   return row;
 }
 
@@ -184,6 +205,7 @@ const fromRow = (r) => ({
   id: r.wa_id, chatId: r.chat_id, fromMe: !!r.from_me, sender: r.sender,
   body: r.body, type: r.type, raw: r.raw || '', ts: r.ts, hasMedia: !!r.has_media, seq: r.seq,
   quoted: r.quoted ? JSON.parse(r.quoted) : null, meta: r.meta ? JSON.parse(r.meta) : null,
+  ack: r.ack === null || r.ack === undefined ? null : r.ack,
 });
 
 // ---------- access control ----------
@@ -295,6 +317,8 @@ app.get('/api/chats', auth, ready, wrap(async (req, res) => {
         id: c.id._serialized, name: c.name || c.id.user, isGroup: !!c.isGroup, archived: !!c.archived,
         unread: c.unreadCount || 0, ts: c.timestamp || 0,
         last: c.lastMessage ? (c.lastMessage.body || LABELS[c.lastMessage.type] || '').slice(0, 120) : '',
+        // when the last message is yours: its delivery state, for the ticks in the chat list
+        lastAck: c.lastMessage && c.lastMessage.fromMe && Number.isInteger(c.lastMessage.ack) ? c.lastMessage.ack : null,
       })),
     };
   }
@@ -364,6 +388,17 @@ app.post('/api/chats/:chatId/photo', auth, ready, validChat, express.raw({ type:
   const caption = String(req.query.caption || '').slice(0, 1024);
   const media = new MessageMedia(mime, buf.toString('base64'), mime === 'image/png' ? 'photo.png' : 'photo.jpg');
   const m = await client.sendMessage(req.params.chatId, media, caption ? { caption } : {});
+  res.json(store(m, true) || { id: m.id._serialized });
+}));
+
+// Send a voice note: the body is a 16-bit PCM WAV recorded on the phone; it is encoded to Ogg Opus here.
+app.post('/api/chats/:chatId/voice', auth, ready, validChat, express.raw({ type: '*/*', limit: '16mb' }), wrap(async (req, res) => {
+  const buf = req.body;
+  if (!Buffer.isBuffer(buf) || buf.length < 100) return res.status(400).json({ error: 'recording required' });
+  let enc;
+  try { enc = await wavToOggOpus(client.pupPage, buf); } catch (e) { return res.status(400).json({ error: e.message }); }
+  const media = new MessageMedia('audio/ogg; codecs=opus', enc.ogg.toString('base64'), 'voice.ogg');
+  const m = await client.sendMessage(req.params.chatId, media, { sendAudioAsVoice: true });
   res.json(store(m, true) || { id: m.id._serialized });
 }));
 

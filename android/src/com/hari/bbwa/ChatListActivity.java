@@ -288,7 +288,18 @@ public class ChatListActivity extends Activity {
             last.setSingleLine(true);
             last.setEllipsize(android.text.TextUtils.TruncateAt.END);
             col.addView(name);
-            col.addView(last);
+            if (o.has("lastAck") && !o.isNull("lastAck")) { // your own message is last: show its ticks before the text
+                LinearLayout lastRow = new LinearLayout(c);
+                lastRow.setOrientation(LinearLayout.HORIZONTAL);
+                lastRow.setGravity(Gravity.CENTER_VERTICAL);
+                LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                tp.rightMargin = UI.dp(c, 4);
+                lastRow.addView(new TickView(c, o.optInt("lastAck")), tp);
+                lastRow.addView(last, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                col.addView(lastRow);
+            } else {
+                col.addView(last);
+            }
             row.addView(col, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
             int unread = o.optInt("unread");

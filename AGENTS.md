@@ -34,7 +34,8 @@ Guide for AI coding agents (and a cheat-sheet for humans). Read [README.md](READ
 **Android side (BB10 runs roughly Android 4.2/4.3, API 17)**
 - No Gradle, no AndroidX, no lambdas needing newer APIs; Java 8 source but only API 17 classes. `java.nio.charset.StandardCharsets` is API 19 and crashes on the device: that is why ZXing is pinned to **3.3.0** (3.5.x references it).
 - Package id `com.hari.bbwa` and the `bbchat://` pairing scheme are intentionally unchanged so new APKs install over old ones with the same signing key. Don't rename them.
-- Opus audio is unsupported on the device; voice notes are converted server-side.
+- Opus audio is unsupported on the device; voice notes are converted server-side. Sending: `Voice.java` records 16 kHz mono PCM to WAV (`AudioRecord`), `POST /api/chats/:id/voice` uploads it, and `server/voice.js` encodes Opus with WebCodecs `AudioEncoder` inside Chromium and wraps it in Ogg (hand-written muxer, CRC checked), then sends with `sendAudioAsVoice`.
+- Ticks: the bridge stores `ack` (0 sending, 1 sent, 2 delivered, 3 read, 4 played, -1 failed) from `message_ack` events and re-stores the row (new seq) so polling clients see it; the app draws them in `TickView.java` (no font glyphs).
 - The camera (`android.hardware.Camera`) reports no exposure-compensation range (min = max = 0) and ignores metering areas; exposure control was tried and abandoned. Focus areas work.
 - Photo storage paths in BB10's runtime vary; `PickImageActivity` scans many roots and shows a "Looked in:" diagnostic when empty. `ACTION_GET_CONTENT` also works.
 - The "complete setup" nag that buzzes the phone is a BB10 OS matter, parked.

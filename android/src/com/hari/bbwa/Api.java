@@ -193,6 +193,35 @@ final class Api {
         }
     }
 
+    /** Uploads a recorded WAV; the bridge encodes it to Ogg Opus and sends it as a voice message. */
+    static JSONObject sendVoice(Context c, String chatId, File wav) throws Exception {
+        HttpURLConnection h = (HttpURLConnection) new URL(base(c) + "/api/chats/" + enc(chatId) + "/voice").openConnection();
+        java.io.FileInputStream in = new java.io.FileInputStream(wav);
+        try {
+            h.setConnectTimeout(8000);
+            h.setReadTimeout(120000);
+            h.setRequestMethod("POST");
+            h.setRequestProperty("Authorization", "Bearer " + token(c));
+            h.setRequestProperty("Content-Type", "audio/wav");
+            h.setRequestProperty("Connection", "close");
+            h.setDoOutput(true);
+            h.setFixedLengthStreamingMode((int) wav.length());
+            OutputStream out = h.getOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            out.close();
+            int code = h.getResponseCode();
+            InputStream resp = code < 400 ? h.getInputStream() : h.getErrorStream();
+            String text = resp == null ? "" : readAll(resp);
+            if (code >= 400) throw new Err(code, text);
+            return new JSONObject(text);
+        } finally {
+            in.close();
+            h.disconnect();
+        }
+    }
+
     static JSONObject updates(Context c, long since) throws Exception {
         return new JSONObject(call(c, "GET", "/api/updates?since=" + since, null));
     }
@@ -217,6 +246,14 @@ final class Api {
             if (x.code == 401) return "Not authorised. Pair this device again.";
             if (x.code == 503) return "WhatsApp is not ready on the server yet.";
             if (x.code == 403) return "Refused by the server.";
+            if (x.code == 400) { // the bridge explains what was wrong with the request
+                try {
+                    String why = new JSONObject(x.getMessage()).optString("error");
+                    if (why.length() > 0) return why;
+                } catch (Exception ignored) {
+                    // not JSON: fall through to the generic text
+                }
+            }
             if (x.code == 409) return "This message can no longer be edited (WhatsApp allows 15 minutes, text only).";
             if (x.code == 404) return "Message not found on the server.";
             return "Server error " + x.code;
