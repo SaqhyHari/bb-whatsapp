@@ -135,6 +135,14 @@ public class ChatActivity extends Activity {
                 if (pos == 0) loadOlder();
             }
         });
+        // press and hold (finger or trackpad) on one of your own text messages to edit it
+        list.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
+            public boolean onItemLongClick(AdapterView<?> p, View v, int pos, long id) {
+                int i = pos - list.getHeaderViewsCount();
+                if (i < 0 || i >= msgs.size()) return false;
+                return offerEdit(msgs.get(i));
+            }
+        });
         root.addView(list, UI.fill());
 
         LinearLayout bar = new LinearLayout(this);
@@ -271,6 +279,44 @@ public class ChatActivity extends Activity {
         });
     }
 
+    private static final long EDIT_WINDOW_S = 15 * 60; // WhatsApp's own limit
+
+    /** Offers editing for your own text messages. Returns true when the press was used. */
+    private boolean offerEdit(final JSONObject m) {
+        if (!m.optBoolean("fromMe") || !m.optString("type").equals("chat") || m.optBoolean("hasMedia")) return false;
+        long age = System.currentTimeMillis() / 1000L - m.optLong("ts");
+        if (age > EDIT_WINDOW_S + 60) { // a minute of slack for clock differences; the server has the final say
+            Toast.makeText(this, "Messages can only be edited within 15 minutes", Toast.LENGTH_SHORT).show();
+            return true;
+        }
+        final EditText box = new EditText(this);
+        box.setText(m.optString("body"));
+        box.setSelection(box.getText().length());
+        new AlertDialog.Builder(this).setTitle("Edit message").setView(box)
+                .setPositiveButton("Save", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) { saveEdit(m, box.getText().toString().trim()); }
+                }).setNegativeButton("Cancel", null).show();
+        return true;
+    }
+
+    private void saveEdit(final JSONObject m, final String text) {
+        if (text.length() == 0 || text.equals(m.optString("body"))) return;
+        Toast.makeText(this, "Saving...", Toast.LENGTH_SHORT).show();
+        Bg.go(new Bg.Job() {
+            public Object run() throws Exception { return Api.edit(ChatActivity.this, chatId, m.optString("id"), text); }
+        }, new Bg.Done() {
+            public void done(Object result, Exception e) {
+                if (isFinishing()) return;
+                if (e != null) {
+                    Toast.makeText(ChatActivity.this, "Not edited: " + Api.why(e), Toast.LENGTH_LONG).show();
+                    return;
+                }
+                JSONObject r = (JSONObject) result;
+                if (r != null && r.has("body") && add(r)) sortAndShow();
+            }
+        });
+    }
+
     private void poll() {
         if (polling || seq < 0) return;
         polling = true;
@@ -294,10 +340,27 @@ public class ChatActivity extends Activity {
         });
     }
 
+    /** Adds a message, or replaces the stored copy when it was edited. True when the list changed. */
     private boolean add(JSONObject m) {
-        if (m == null || !ids.add(m.optString("id"))) return false;
-        msgs.add(m);
-        return true;
+        if (m == null) return false;
+        String id = m.optString("id");
+        if (ids.add(id)) {
+            msgs.add(m);
+            return true;
+        }
+        for (int i = 0; i < msgs.size(); i++) {
+            JSONObject old = msgs.get(i);
+            if (!old.optString("id").equals(id)) continue;
+            if (old.optString("body").equals(m.optString("body")) && isEdited(old) == isEdited(m)) return false;
+            msgs.set(i, m);
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean isEdited(JSONObject m) {
+        JSONObject meta = m.optJSONObject("meta");
+        return meta != null && meta.optBoolean("edited");
     }
 
     private void sortAndShow() {
@@ -751,7 +814,7 @@ public class ChatActivity extends Activity {
             }
             Date when = new Date(m.optLong("ts") * 1000L);
             boolean today = day.format(when).equals(day.format(new Date()));
-            TextView time = UI.text(c, (today ? clock : dated).format(when), 11, UI.GREY, false);
+            TextView time = UI.text(c, (isEdited(m) ? "edited  " : "") + (today ? clock : dated).format(when), 11, UI.GREY, false);
             time.setGravity(Gravity.RIGHT);
             b.addView(time);
             wrap.addView(b);

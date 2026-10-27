@@ -74,6 +74,7 @@ const q = {
       has_media = excluded.has_media, raw = excluded.raw, quoted = excluded.quoted, meta = excluded.meta`),
   fromMeByStanza: db.prepare('SELECT from_me FROM messages WHERE wa_id LIKE ? LIMIT 1'),
   since: db.prepare('SELECT * FROM messages WHERE seq > ? AND live = 1 ORDER BY seq ASC LIMIT 200'),
+  delMsg: db.prepare('DELETE FROM messages WHERE wa_id = ?'),
   maxSeq: db.prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM messages'),
   deviceByHash: db.prepare('SELECT * FROM devices WHERE token_hash = ?'),
   addDevice: db.prepare('INSERT INTO devices (id, name, token_hash, created) VALUES (?, ?, ?, ?)'),
@@ -105,6 +106,16 @@ client.on('message_create', (m) => {
     console.error('store failed:', e.message, '| id', t(m.id && m.id._serialized), 'from', t(m.from), 'to', t(m.to),
       'body', t(m.body), 'type', t(m.type), 'ts', t(m.timestamp), 'notify', t(m._data && m._data.notifyName));
   }
+});
+// An edited message is stored again as a brand-new row (new seq) so polling clients notice the change.
+function restoreEdited(m, body) {
+  if (body !== undefined) m.body = body;
+  m._edited = true;
+  q.delMsg.run(m.id._serialized);
+  return store(m, true);
+}
+client.on('message_edit', (m, newBody) => {
+  try { restoreEdited(m, newBody); } catch (e) { console.error('edit event failed:', e.message); }
 });
 client.initialize().catch((e) => { wa.state = 'error'; console.error('initialize failed:', e.message); });
 
@@ -138,6 +149,7 @@ function metaOf(m) {
   if (d.mimetype) meta.mime = String(d.mimetype).split(';')[0];
   if (d.width && d.height) { meta.w = Number(d.width); meta.h = Number(d.height); }
   if (d.isGif) meta.gif = true;
+  if (m._edited || d.latestEditMsgKey || d.latestEditSenderTimestampMs) meta.edited = true;
   return Object.keys(meta).length ? meta : null;
 }
 
@@ -308,6 +320,21 @@ app.post('/api/chats/:chatId/messages', auth, ready, validChat, wrap(async (req,
   if (!text.trim() || text.length > 4096) return res.status(400).json({ error: 'text required (max 4096)' });
   const m = await client.sendMessage(req.params.chatId, text);
   res.json(store(m, true) || { id: m.id._serialized });
+}));
+
+// Edit one of your own text messages (WhatsApp allows this for 15 minutes after sending).
+app.post('/api/chats/:chatId/messages/:id/edit', auth, ready, validChat, wrap(async (req, res) => {
+  const id = req.params.id;
+  const text = req.body && typeof req.body.text === 'string' ? req.body.text : '';
+  if (!MSG_ID.test(id)) return res.status(400).json({ error: 'bad id' });
+  if (!text.trim() || text.length > 4096) return res.status(400).json({ error: 'text required (max 4096)' });
+  const m = await client.getMessageById(id);
+  if (!m || !m.fromMe || m.to !== req.params.chatId) return res.status(404).json({ error: 'message not found' });
+  if (m.type !== 'chat') return res.status(409).json({ error: 'only text messages can be edited' });
+  const edited = await m.edit(text);
+  if (!edited) return res.status(409).json({ error: 'cannot be edited any more' });
+  const row = restoreEdited(m, text);
+  res.json(row || { id });
 }));
 
 // Profile picture as a JPEG, cached for a day (a missing/private photo is cached too).

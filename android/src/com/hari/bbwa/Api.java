@@ -197,6 +197,13 @@ final class Api {
         return new JSONObject(call(c, "GET", "/api/updates?since=" + since, null));
     }
 
+    /** Edit one of your own text messages; the server answers with the updated message. */
+    static JSONObject edit(Context c, String chatId, String msgId, String text) throws Exception {
+        JSONObject b = new JSONObject();
+        b.put("text", text);
+        return new JSONObject(call(c, "POST", "/api/chats/" + enc(chatId) + "/messages/" + enc(msgId) + "/edit", b.toString()));
+    }
+
     static JSONObject send(Context c, String chatId, String text) throws Exception {
         JSONObject b = new JSONObject();
         b.put("text", text);
@@ -210,6 +217,8 @@ final class Api {
             if (x.code == 401) return "Not authorised. Pair this device again.";
             if (x.code == 503) return "WhatsApp is not ready on the server yet.";
             if (x.code == 403) return "Refused by the server.";
+            if (x.code == 409) return "This message can no longer be edited (WhatsApp allows 15 minutes, text only).";
+            if (x.code == 404) return "Message not found on the server.";
             return "Server error " + x.code;
         }
         if (e instanceof java.net.ConnectException || e instanceof java.net.SocketTimeoutException

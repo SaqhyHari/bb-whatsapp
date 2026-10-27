@@ -22,7 +22,7 @@ Guide for AI coding agents (and a cheat-sheet for humans). Read [README.md](READ
 
 ## Layout and entry points
 
-- `server/server.js`: whole bridge. Endpoints: `POST /api/pair`, `GET /api/ping|status|chats|updates`, `GET/POST /api/chats/:id/messages`, `POST /api/chats/:id/photo` (raw JPEG/PNG body, `?caption=`), `GET /api/media/:id[?fmt=wav]`, `GET /api/avatar/:chatId`; loopback-only `/admin`, `/admin/state`, `POST /admin/pair-code`, `DELETE /admin/devices/:id`.
+- `server/server.js`: whole bridge. Endpoints: `POST /api/pair`, `GET /api/ping|status|chats|updates`, `GET/POST /api/chats/:id/messages`, `POST /api/chats/:id/messages/:msgId/edit` (own text, 15 min), `POST /api/chats/:id/photo` (raw JPEG/PNG body, `?caption=`), `GET /api/media/:id[?fmt=wav]`, `GET /api/avatar/:chatId`; loopback-only `/admin`, `/admin/state`, `POST /admin/pair-code`, `DELETE /admin/devices/:id`.
 - `server/patches/apply.js`: idempotent edits to `node_modules/whatsapp-web.js`, run on every start (see gotchas). Re-run `npm install` and the server re-applies them.
 - `server/admin.html`: WhatsApp link QR, pairing code and QR, device list.
 - `android/src/com/hari/bbwa/`: `ChatListActivity`, `ChatActivity`, `PollService` (15 s polling, notifications), `CaptureActivity` (camera), `PickImageActivity`, `ScanActivity` (QR), `Api` (HTTP client), `Media`/`Avatars` (caches), `UI` (helpers, no layouts XML).

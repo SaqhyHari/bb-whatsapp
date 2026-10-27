@@ -17,7 +17,7 @@ Your main WhatsApp stays on your phone of choice. The Q20 is just another linked
 ## What works
 
 - Chat list with profile pictures, Chats / Archived tabs, unread counts
-- Send and receive text; photos and stickers shown inline; reply quotes; emoji picker
+- Edit your own text messages (press and hold, within WhatsApp's 15 minutes); send and receive text; photos and stickers shown inline; reply quotes; emoji picker
 - Voice notes: **play** them (the bridge converts Opus to WAV, because Android 4.3 can't play Opus)
 - Videos: download and play
 - Send photos from the camera or gallery
