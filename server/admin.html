@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BB WhatsApp Bridge</title>
+<style>
+:root{color-scheme:light dark}
+body{font-family:-apple-system,system-ui,sans-serif;max-width:560px;margin:24px auto;padding:0 16px}
+h1{font-size:22px}
+.card{border:1px solid #8884;border-radius:10px;padding:14px;margin:14px 0}
+#qr svg,#pairqr svg{width:260px;height:260px;background:#fff}
+button{font-size:15px;padding:6px 12px}
+.code{font-size:34px;letter-spacing:6px;font-weight:600}
+.muted{opacity:.65;font-size:13px}
+table{width:100%;border-collapse:collapse}td{padding:4px 0}
+</style></head><body>
+<h1>BB WhatsApp Bridge</h1>
+
+<div class="card">
+  <b>1. Link WhatsApp</b>
+  <div id="state" class="muted">loading…</div>
+  <div id="qr"></div>
+  <div class="muted">On your iPhone: WhatsApp → Settings → Linked Devices → Link a Device, then scan.</div>
+</div>
+
+<div class="card">
+  <b>2. Pair the Q20 app</b>
+  <p><button id="mk">Show pairing code</button></p>
+  <div id="code" class="code"></div>
+  <div id="pairqr"></div>
+  <div class="muted" id="pairhelp">Press the button, then scan the square with the Q20 app, or type the server address and code. The code works once and expires in 10 minutes.</div>
+</div>
+
+<div class="card">
+  <b>Paired devices</b>
+  <table id="devs"></table>
+</div>
+
+<script>
+var $ = function (id) { return document.getElementById(id); };
+function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function load() {
+  fetch('/admin/state').then(function (r) { return r.json(); }).then(function (s) {
+    var labels = {ready:'Linked and ready ✔', qr:'Waiting for QR scan…', starting:'Starting browser…',
+      authenticated:'Authenticated, finishing…', disconnected:'Disconnected', auth_failure:'Login failed', error:'Error, see server log'};
+    $('state').textContent = labels[s.state] || s.state;
+    $('qr').innerHTML = s.qrSvg || '';
+    $('code').textContent = s.pairCode ? s.pairCode + (s.pairHost ? '   ' + s.pairHost : '') : '';
+    $('pairqr').innerHTML = s.pairQrSvg || '';
+    $('devs').innerHTML = s.devices.length ? s.devices.map(function (d) {
+      return '<tr><td>' + esc(d.name) + '<div class="muted">last seen ' +
+        (d.last_seen ? new Date(d.last_seen * 1000).toLocaleString() : 'never') + '</div></td>' +
+        '<td align="right"><button data-id="' + esc(d.id) + '">Revoke</button></td></tr>';
+    }).join('') : '<tr><td class="muted">none yet</td></tr>';
+  }).catch(function () { $('state').textContent = 'server not reachable'; });
+}
+$('mk').onclick = function () {
+  fetch('/admin/pair-code', {method: 'POST'}).then(function (r) { return r.json(); })
+    .then(function () { load(); });
+};
+$('devs').onclick = function (e) {
+  var id = e.target.getAttribute && e.target.getAttribute('data-id');
+  if (id && confirm('Revoke this device?')) fetch('/admin/devices/' + encodeURIComponent(id), {method: 'DELETE'}).then(load);
+};
+load(); setInterval(load, 2500);
+</script>
+</body></html>

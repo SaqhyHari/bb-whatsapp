@@ -1,0 +1,30 @@
+# Downloaded toolchains (recreate with scripts/setup-tools.sh)
+/tools/
+
+# Reference clone of someone else's project, not part of this repo (see README, Credits)
+upstream/
+
+# Bridge state: WhatsApp session, message database, cached media, avatars, pairing tokens. NEVER commit.
+server/data/
+server/.wwebjs_cache/
+node_modules/
+
+# Build output and the local signing key
+android/build/
+android/keys/
+android/libs/*.jar
+*.apk
+*.idsig
+
+# Launcher icon: the artwork is not redistributed; build.sh draws a placeholder (see README)
+android/tools/icon-source.png
+android/res/drawable*/ic_launcher.png
+
+# Files shared through the drop-box (photos, APKs) and the older-versions folder
+dropbox/shared/
+
+# Local/OS/editor noise
+.DS_Store
+*.log
+.env
+.claude/
