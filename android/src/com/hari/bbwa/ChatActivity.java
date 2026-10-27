@@ -123,14 +123,18 @@ public class ChatActivity extends Activity {
         LinearLayout olderWrap = new LinearLayout(this);
         olderBtn = UI.text(this, "Load older messages", 14, UI.GREEN, true);
         olderBtn.setGravity(Gravity.CENTER);
+        olderBtn.setVisibility(View.GONE); // shown once the first messages are in, so it is never the initial selection
         olderBtn.setPadding(0, UI.dp(this, 12), 0, UI.dp(this, 12));
-        olderBtn.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { loadOlder(); }
-        });
         olderWrap.addView(olderBtn, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        list.addHeaderView(olderWrap, null, false);
+        // selectable, so the trackpad cursor can reach it as well as a finger; it is activated through the list's item click
+        list.addHeaderView(olderWrap, null, true);
         adapter = new MsgAdapter();
         list.setAdapter(adapter);
+        list.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            public void onItemClick(AdapterView<?> p, View v, int pos, long id) {
+                if (pos == 0) loadOlder();
+            }
+        });
         root.addView(list, UI.fill());
 
         LinearLayout bar = new LinearLayout(this);
@@ -217,7 +221,9 @@ public class ChatActivity extends Activity {
                 JSONArray a = (JSONArray) r[0];
                 for (int i = 0; i < a.length(); i++) add(a.optJSONObject(i));
                 seq = ((Long) r[1]).longValue();
+                olderBtn.setVisibility(View.VISIBLE);
                 sortAndShow();
+                list.setSelection(list.getCount() - 1); // cursor starts on the newest message, not on the top button
                 status.setText("");
                 status.setVisibility(View.GONE);
             }
