@@ -107,7 +107,9 @@ AGENTS.md    Guide for AI agents (also a good developer cheat-sheet)
 
 ## Credits
 
-This project stands on other people's work:
+**Built by [SaqhyHari](https://github.com/SaqhyHari) together with [Claude](https://claude.com/claude-code)** (Anthropic's AI coding assistant), which wrote most of the code and docs in this repository. Claude is credited as co-author on every commit.
+
+This project also stands on other people's work:
 
 - **[whatsapp-web.js](https://github.com/pedroslopez/whatsapp-web.js)** by Pedro S. Lopez and contributors (Apache-2.0), the library the bridge is built on, and **[Puppeteer](https://pptr.dev)** (Apache-2.0) which drives Chromium.
 - **[NovelProfessor/whatsapp-server](https://github.com/NovelProfessor/whatsapp-server)** by Christopher Gomes (ISC), the server for a Nokia J2ME WhatsApp client. Its idea of a WhatsApp-Web-backed REST bridge with a SQLite message store, polled by a tiny old-phone client, inspired this project's architecture. No code was copied; our server was written from scratch with authentication and a private-network guard added.
