@@ -43,7 +43,16 @@ final class Media {
     static Bitmap cached(String id, int maxPx) { return MEM.get(key(id, maxPx)); }
 
     /** Fetch and decode off the UI thread; calls back on it only when an image was produced. */
-    static void load(final Context ctx, final String id, final int maxPx, final Ready cb) {
+    static void load(Context ctx, String id, int maxPx, Ready cb) { load(ctx, id, maxPx, cb, null); }
+
+    /** Tapped by the user: forget an earlier failure and try again; `failed` runs on the UI thread if it still fails. */
+    static void retry(Context ctx, String id, int maxPx, Ready cb, Runnable failed) {
+        MISSING.remove(id);
+        PENDING.remove(key(id, maxPx));
+        load(ctx, id, maxPx, cb, failed);
+    }
+
+    static void load(final Context ctx, final String id, final int maxPx, final Ready cb, final Runnable failed) {
         final String k = key(id, maxPx);
         if (MISSING.contains(id) || !PENDING.add(k)) return;
         final Context app = ctx.getApplicationContext();
@@ -53,7 +62,13 @@ final class Media {
                 try {
                     byte[] data = bytes(app, id);
                     if (data == null) MISSING.add(id);
-                    else out = decode(data, maxPx);
+                    else {
+                        out = decode(data, maxPx);
+                        if (out == null) { // e.g. an animated WebP sticker: Android 4.3 cannot read it, the bridge sends a still
+                            byte[] still = stillBytes(app, id);
+                            if (still != null) out = decode(still, maxPx);
+                        }
+                    }
                 } catch (Exception e) {
                     // network problem: leave unmarked so a later view retries
                 } catch (OutOfMemoryError e) {
@@ -66,6 +81,8 @@ final class Media {
                     Bg.MAIN.post(new Runnable() {
                         public void run() { cb.ready(fb); }
                     });
+                } else if (failed != null) {
+                    Bg.MAIN.post(failed);
                 }
             }
         });
@@ -95,6 +112,19 @@ final class Media {
         out.close();
         tmp.renameTo(f);
         trim(dir);
+        return data;
+    }
+
+    /** A PNG still of an image the phone cannot decode itself, kept next to the original. */
+    private static byte[] stillBytes(Context c, String id) throws IOException {
+        File dir = new File(c.getCacheDir(), "media");
+        File f = new File(dir, id.replaceAll("[^0-9A-Za-z]", "_") + ".png");
+        if (f.exists() && f.length() > 0) return readFile(f);
+        byte[] data = Api.bytes(c, "/api/media/" + Api.enc(id) + "?fmt=png");
+        if (data == null) return null;
+        FileOutputStream out = new FileOutputStream(f);
+        out.write(data);
+        out.close();
         return data;
     }
 

@@ -154,6 +154,30 @@ client.on('message_ack', (m, ack) => {
 client.on('message_edit', (m, newBody) => {
   try { restoreEdited(m, newBody); } catch (e) { console.error('edit event failed:', e.message); }
 });
+// Reactions: WhatsApp reports them as separate events. The message's current reactions are read back and the
+// row is stored again (new seq) so polling clients notice, like edits and ticks.
+async function reactionsOf(m) {
+  if (!m || !m.hasReaction) return [];
+  const list = await m.getReactions().catch(() => undefined);
+  return (list || []).map((r) => ({ e: r.aggregateEmoji || r.id, n: (r.senders || []).length, me: !!r.hasReactionByMe }))
+    .filter((r) => r.e && r.n > 0);
+}
+async function refreshReactions(id) {
+  const m = await client.getMessageById(id);
+  if (!m) return null;
+  m._reactions = await reactionsOf(m);
+  const prev = q.metaOf.get(id);
+  if (prev && prev.meta && JSON.parse(prev.meta).edited) m._edited = true;
+  q.delMsg.run(id);
+  return store(m, true);
+}
+client.on('message_reaction', (reaction) => {
+  const k = reaction && reaction.msgId;
+  const id = k && (k._serialized || k.$1);
+  if (!id) return;
+  refreshReactions(id).catch((e) => console.error('reaction event failed:', e.message));
+});
+
 client.initialize().catch((e) => { wa.state = 'error'; console.error('initialize failed:', e.message); });
 
 const widStr = (x) => (x ? (x._serialized || x.$1 || (typeof x === 'string' ? x : (x.user && x.server ? `${x.user}@${x.server}` : ''))) : '');
@@ -216,7 +240,11 @@ function store(m, live = false) {
   };
   // an "edited" mark we already know about must survive when WhatsApp's data for the message doesn't carry it
   const prev = q.metaOf.get(row.id);
-  if (prev && prev.meta && !(row.meta && row.meta.edited) && JSON.parse(prev.meta).edited) row.meta = { ...(row.meta || {}), edited: true };
+  const prevMeta = prev && prev.meta ? JSON.parse(prev.meta) : {};
+  if (prevMeta.edited && !(row.meta && row.meta.edited)) row.meta = { ...(row.meta || {}), edited: true };
+  // reactions: [{e: emoji, n: how many, me: true if you reacted}]. Fresh data wins; otherwise keep what we knew.
+  const reactions = m._reactions !== undefined ? m._reactions : prevMeta.reactions;
+  if (reactions && reactions.length) row.meta = { ...(row.meta || {}), reactions };
   q.insertMsg.run(row.id, row.chatId, row.fromMe ? 1 : 0, row.sender, row.body, row.type, row.ts, row.hasMedia ? 1 : 0, live ? 1 : 0, row.raw,
     row.quoted ? JSON.stringify(row.quoted) : null, row.meta ? JSON.stringify(row.meta) : null, row.ack);
   return row;
@@ -384,6 +412,7 @@ app.get('/api/chats/:chatId/messages', auth, ready, validChat, wrap(async (req, 
   // WhatsApp Web's message collection isn't strictly chronological (history-synced call logs can sit
   // at the end), so a small limit can return the wrong slice. Over-fetch, sort, keep the newest.
   const msgs = await chat.fetchMessages({ limit: Math.min(600, limit * 3) });
+  await Promise.all(msgs.map(async (m) => { m._reactions = await reactionsOf(m); })); // only touches messages that have any
   const out = [];
   for (const m of msgs) { const row = store(m); if (row) out.push(row); }
   out.sort((a, b) => a.ts - b.ts);
@@ -524,6 +553,32 @@ app.post('/api/chats/:chatId/voice', auth, ready, validChat, express.raw({ type:
 }));
 
 // Cheap polling: ?since=<seq> returns messages stored after that sequence number.
+// React to a message with an emoji; an empty emoji removes your reaction.
+app.post('/api/chats/:chatId/messages/:id/react', auth, ready, validChat, wrap(async (req, res) => {
+  const emoji = req.body && typeof req.body.emoji === 'string' ? req.body.emoji : null;
+  if (emoji === null || emoji.length > 16) return res.status(400).json({ error: 'emoji required (or empty to remove)' });
+  const m = await chatMessage(req, res);
+  if (!m) return;
+  await m.react(emoji);
+  // Answer from what we know (your reaction swapped in) rather than waiting for WhatsApp Web to settle; the
+  // real list is read back a moment later and the app picks it up through the normal updates.
+  const prevRow = q.byId.get(req.params.id);
+  const prev = prevRow && prevRow.meta ? (JSON.parse(prevRow.meta).reactions || []) : [];
+  const next = [];
+  for (const r of prev) {
+    if (r.me) { if (r.n - 1 > 0) next.push({ ...r, n: r.n - 1, me: false }); } else next.push(r);
+  }
+  if (emoji) {
+    const same = next.find((r) => r.e === emoji);
+    if (same) { same.n += 1; same.me = true; } else next.push({ e: emoji, n: 1, me: true });
+  }
+  m._reactions = next;
+  q.delMsg.run(req.params.id);
+  const row = store(m, true);
+  setTimeout(() => refreshReactions(req.params.id).catch((e) => console.error('reaction refresh failed:', e.message)), 1500);
+  res.json(row || { id: req.params.id });
+}));
+
 app.get('/api/updates', auth, wrap(async (req, res) => {
   const since = Math.max(0, Number(req.query.since) || 0);
   const messages = q.since.all(since).map(fromRow);
@@ -571,6 +626,21 @@ async function toWav(buf) {
   return Buffer.from(b64, 'base64');
 }
 
+// First frame of a WebP as a PNG (at most 320 px), decoded by the bridge's own Chromium.
+async function webpToPng(buf) {
+  const out = await client.pupPage.evaluate(async (b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/webp' }));
+    const k = Math.min(1, 320 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(bmp.width * k));
+    c.height = Math.max(1, Math.round(bmp.height * k));
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    return c.toDataURL('image/png').split(',')[1];
+  }, buf.toString('base64'));
+  return Buffer.from(out, 'base64');
+}
+
 app.get('/api/media/:id', auth, ready, wrap(async (req, res) => {
   const id = req.params.id;
   if (!MSG_ID.test(id)) return res.status(400).json({ error: 'bad id' });
@@ -585,6 +655,12 @@ app.get('/api/media/:id', auth, ready, wrap(async (req, res) => {
     meta = { mime: String(media.mimetype || '').split(';')[0], name: path.basename(media.filename || 'file') };
     fs.writeFileSync(base + '.bin', Buffer.from(media.data, 'base64'));
     fs.writeFileSync(base + '.json', JSON.stringify(meta));
+  }
+  // Android 4.3 cannot decode animated (or some other) WebP stickers; Chromium can, so hand the phone a still PNG.
+  if (req.query.fmt === 'png' && meta.mime === 'image/webp') {
+    const pngFile = base + '.png';
+    if (!fs.existsSync(pngFile)) fs.writeFileSync(pngFile, await webpToPng(fs.readFileSync(base + '.bin')));
+    return res.type('image/png').sendFile(pngFile);
   }
   if (req.query.fmt === 'wav' && /ogg|opus|webm/.test(meta.mime)) {
     const wavFile = base + '.wav';

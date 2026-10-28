@@ -263,6 +263,13 @@ final class Api {
         return new JSONObject(call(c, "POST", "/api/chats/" + enc(chatId) + "/messages/" + enc(msgId) + "/edit", b.toString()));
     }
 
+    /** Reacts to a message with an emoji (empty removes your reaction); returns the message's new state. */
+    static JSONObject react(Context c, String chatId, String msgId, String emoji) throws Exception {
+        JSONObject b = new JSONObject();
+        b.put("emoji", emoji);
+        return new JSONObject(call(c, "POST", "/api/chats/" + enc(chatId) + "/messages/" + enc(msgId) + "/react", b.toString()));
+    }
+
     /** Deletes a message for you, or for everyone (own messages, within WhatsApp's time limit). */
     static JSONObject delete(Context c, String chatId, String msgId, boolean everyone) throws Exception {
         JSONObject b = new JSONObject();

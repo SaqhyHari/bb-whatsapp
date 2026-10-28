@@ -135,6 +135,7 @@ public class PollService extends Service {
         if (kind.equals("revoked") || kind.equals("deleted")) return false; // a deletion is not a new message
         JSONObject meta = m.optJSONObject("meta");
         if (meta != null && meta.optBoolean("edited")) return false; // an edit is not a new message
+        if (meta != null && meta.has("reactions")) return false; // nor is a reaction arriving on an old one
         String chat = m.optString("chatId");
         return chat.length() > 0 && !chat.equals(ChatActivity.openChat);
     }

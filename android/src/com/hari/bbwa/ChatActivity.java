@@ -342,6 +342,7 @@ public class ChatActivity extends Activity {
         long age = System.currentTimeMillis() / 1000L - m.optLong("ts");
         final List<String> labels = new ArrayList<String>();
         if (!gone) labels.add("Reply");
+        if (!gone) labels.add("React");
         if (mine && type.equals("chat") && !m.optBoolean("hasMedia") && age <= EDIT_WINDOW_S + 60) labels.add("Edit");
         if (!gone) labels.add("Forward");
         labels.add("Delete for me");
@@ -350,12 +351,132 @@ public class ChatActivity extends Activity {
             public void onClick(DialogInterface d, int which) {
                 String pick = labels.get(which);
                 if (pick.equals("Reply")) setReply(m);
+                else if (pick.equals("React")) reactDialog(m);
                 else if (pick.equals("Edit")) offerEdit(m);
                 else if (pick.equals("Forward")) startForward(m);
                 else confirmDelete(m, pick.equals("Delete for everyone"));
             }
         }).show();
     }
+
+    private static final String[] QUICK_REACTIONS = { "1f44d", "2764", "1f602", "1f62e", "1f622", "1f64f" };
+
+    /** Six quick reactions as pictures, "More" for the whole emoji set, and removing your own. */
+    private void reactDialog(final JSONObject m) {
+        final AlertDialog[] dlg = new AlertDialog[1];
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout row = new LinearLayout(this);
+        for (final String name : QUICK_REACTIONS) {
+            ImageView v = new ImageView(this);
+            v.setImageBitmap(EmojiText.picture(this, name));
+            v.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            int pad = UI.dp(this, 6);
+            v.setPadding(pad, pad, pad, pad);
+            v.setFocusable(true);
+            v.setClickable(true);
+            v.setBackgroundDrawable(UI.focusFill(UI.HILITE));
+            v.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View x) {
+                    dlg[0].dismiss();
+                    sendReaction(m, EmojiText.toText(name));
+                }
+            });
+            row.addView(v, new LinearLayout.LayoutParams(UI.dp(this, 46), UI.dp(this, 46)));
+        }
+        box.addView(row);
+        TextView more = UI.text(this, "More emoji...", 15, UI.ACCENT, true);
+        more.setPadding(UI.dp(this, 12), UI.dp(this, 10), UI.dp(this, 12), UI.dp(this, 10));
+        more.setFocusable(true);
+        more.setClickable(true);
+        more.setBackgroundDrawable(UI.focusFill(UI.HILITE));
+        more.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View x) {
+                dlg[0].dismiss();
+                emojiPicker(new PickedEmoji() {
+                    public void picked(String text) { sendReaction(m, text); }
+                });
+            }
+        });
+        box.addView(more);
+        if (myReaction(m).length() > 0) {
+            TextView off = UI.text(this, "Remove my reaction", 15, UI.TEXT, false);
+            off.setPadding(UI.dp(this, 12), UI.dp(this, 10), UI.dp(this, 12), UI.dp(this, 10));
+            off.setFocusable(true);
+            off.setClickable(true);
+            off.setBackgroundDrawable(UI.focusFill(UI.HILITE));
+            off.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View x) {
+                    dlg[0].dismiss();
+                    sendReaction(m, "");
+                }
+            });
+            box.addView(off);
+        }
+        dlg[0] = new AlertDialog.Builder(this).setTitle("React").setView(box).setNegativeButton("Cancel", null).show();
+    }
+
+    /** The message as it will look once `emoji` is your reaction (empty removes it), for an instant on-screen update. */
+    private static JSONObject withMyReaction(JSONObject m, String emoji) {
+        try {
+            JSONObject copy = new JSONObject(m.toString());
+            JSONObject meta = copy.optJSONObject("meta");
+            if (meta == null) meta = new JSONObject();
+            JSONArray old = meta.optJSONArray("reactions");
+            JSONArray out = new JSONArray();
+            for (int i = 0; old != null && i < old.length(); i++) {
+                JSONObject o = old.optJSONObject(i);
+                if (o == null) continue;
+                if (o.optBoolean("me")) { // your previous reaction goes
+                    int n = o.optInt("n", 1) - 1;
+                    if (n <= 0) continue;
+                    o = new JSONObject(o.toString());
+                    o.put("n", n);
+                    o.put("me", false);
+                }
+                out.put(o);
+            }
+            if (emoji.length() > 0) {
+                boolean merged = false;
+                for (int i = 0; i < out.length(); i++) {
+                    JSONObject o = out.getJSONObject(i);
+                    if (o.optString("e").equals(emoji)) {
+                        o.put("n", o.optInt("n", 1) + 1);
+                        o.put("me", true);
+                        merged = true;
+                    }
+                }
+                if (!merged) out.put(new JSONObject().put("e", emoji).put("n", 1).put("me", true));
+            }
+            if (out.length() > 0) meta.put("reactions", out);
+            else meta.remove("reactions");
+            copy.put("meta", meta);
+            return copy;
+        } catch (Exception e) {
+            return m;
+        }
+    }
+
+    private void sendReaction(final JSONObject m, final String emoji) {
+        if (add(withMyReaction(m, emoji))) sortAndShow(); // show it at once; the bridge's answer confirms it
+        Bg.go(new Bg.Job() {
+            public Object run() throws Exception { return Api.react(ChatActivity.this, chatId, m.optString("id"), emoji); }
+        }, new Bg.Done() {
+            public void done(Object result, Exception e) {
+                if (isFinishing()) return;
+                if (e != null) {
+                    Toast.makeText(ChatActivity.this, "Reaction not sent: " + Api.why(e), Toast.LENGTH_LONG).show();
+                    if (add(m)) sortAndShow(); // put the old state back
+                    return;
+                }
+                JSONObject r = (JSONObject) result;
+                if (r != null && r.has("body") && add(r)) sortAndShow();
+            }
+        });
+    }
+
+    /** What the emoji picker hands back when it is used to choose a reaction instead of typing. */
+    private interface PickedEmoji { void picked(String text); }
 
     /** Starts a reply: shows who and what is being answered above the message box. */
     private void setReply(JSONObject m) {
@@ -535,11 +656,38 @@ public class ChatActivity extends Activity {
             if (!old.optString("id").equals(id)) continue;
             if (old.optString("body").equals(m.optString("body")) && old.optString("type").equals(m.optString("type"))
                     && isEdited(old) == isEdited(m)
+                    && reactionLine(old).equals(reactionLine(m))
                     && old.optInt("ack", -9) == m.optInt("ack", -9)) return false;
             msgs.set(i, m);
             return true;
         }
         return false;
+    }
+
+    /** "thumbs-up 2  heart" style summary of a message's reactions ("" when none). */
+    private static String reactionLine(JSONObject m) {
+        JSONObject meta = m.optJSONObject("meta");
+        JSONArray r = meta == null ? null : meta.optJSONArray("reactions");
+        if (r == null) return "";
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < r.length(); i++) {
+            JSONObject o = r.optJSONObject(i);
+            if (o == null) continue;
+            if (b.length() > 0) b.append("  ");
+            b.append(o.optString("e"));
+            if (o.optInt("n", 1) > 1) b.append(' ').append(o.optInt("n"));
+        }
+        return b.toString();
+    }
+
+    private static String myReaction(JSONObject m) {
+        JSONObject meta = m.optJSONObject("meta");
+        JSONArray r = meta == null ? null : meta.optJSONArray("reactions");
+        for (int i = 0; r != null && i < r.length(); i++) {
+            JSONObject o = r.optJSONObject(i);
+            if (o != null && o.optBoolean("me")) return o.optString("e");
+        }
+        return "";
     }
 
     private static boolean isEdited(JSONObject m) {
@@ -662,7 +810,10 @@ public class ChatActivity extends Activity {
         });
     }
 
-    private void emojiPicker() {
+    private void emojiPicker() { emojiPicker(null); }
+
+    private void emojiPicker(final PickedEmoji handler) {
+        final AlertDialog[] self = new AlertDialog[1];
         final List<List<String>> cats = EmojiText.categories(this);
         final List<String> recent = EmojiText.recent(this);
         final List<String> shown = new ArrayList<String>();
@@ -691,6 +842,12 @@ public class ChatActivity extends Activity {
             public void onItemClick(AdapterView<?> p, View v, int pos, long id) {
                 String name = shown.get(pos);
                 String text = EmojiText.toText(name);
+                if (handler != null) {
+                    EmojiText.used(ChatActivity.this, name);
+                    self[0].dismiss();
+                    handler.picked(text);
+                    return;
+                }
                 int s = Math.max(0, input.getSelectionStart());
                 int e = Math.max(0, input.getSelectionEnd());
                 input.getText().replace(Math.min(s, e), Math.max(s, e), text, 0, text.length());
@@ -741,7 +898,7 @@ public class ChatActivity extends Activity {
         box.addView(tabScroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, UI.dp(this, 46)));
         box.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, UI.dp(this, 280)));
         tabViews[recent.size() >= 12 ? 0 : tabViews.length - cats.size()].performClick(); // Recent only opens first once it has something to show
-        new AlertDialog.Builder(this).setTitle("Emoji").setView(box).setPositiveButton("Done", null).show();
+        self[0] = new AlertDialog.Builder(this).setTitle(handler == null ? "Emoji" : "React with").setView(box).setPositiveButton(handler == null ? "Done" : "Cancel", null).show();
     }
 
     private void photoMenu() {
@@ -1035,11 +1192,28 @@ public class ChatActivity extends Activity {
                 }
             });
         }
+        final String what = sticker ? "Sticker" : "Photo";
         box.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                Intent i = new Intent(c, ImageActivity.class);
-                i.putExtra("id", id);
-                startActivity(i);
+                if (label.getVisibility() != View.VISIBLE) { // already showing: open it full screen
+                    Intent i = new Intent(c, ImageActivity.class);
+                    i.putExtra("id", id);
+                    startActivity(i);
+                    return;
+                }
+                // not downloaded (or the earlier try failed): fetch it now
+                label.setText("[Downloading " + what.toLowerCase() + "...]");
+                iv.setTag(id);
+                Media.retry(c, id, THUMB_PX, new Media.Ready() {
+                    public void ready(Bitmap b) {
+                        if (id.equals(iv.getTag())) {
+                            iv.setImageBitmap(b);
+                            label.setVisibility(View.GONE);
+                        }
+                    }
+                }, new Runnable() {
+                    public void run() { label.setText("[" + what + " - could not download, tap to retry]"); }
+                });
             }
         });
         return box;
@@ -1133,19 +1307,31 @@ public class ChatActivity extends Activity {
                 body.setMaxWidth(c.getResources().getDisplayMetrics().widthPixels * 7 / 10);
                 b.addView(body);
             }
+            String rline = reactionLine(m);
             Date when = new Date(m.optLong("ts") * 1000L);
             boolean today = day.format(when).equals(day.format(new Date()));
             TextView time = UI.text(c, (isEdited(m) ? "edited  " : "") + (today ? clock : dated).format(when), 11, UI.GREY, false);
             time.setGravity(Gravity.RIGHT);
-            if (mine && m.has("ack") && !m.isNull("ack")) { // delivery ticks next to the time
+            boolean ticked = mine && m.has("ack") && !m.isNull("ack");
+            if (ticked || rline.length() > 0) { // reactions, time and ticks share one footer row
                 LinearLayout foot = new LinearLayout(c);
                 foot.setOrientation(LinearLayout.HORIZONTAL);
                 foot.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+                if (rline.length() > 0) {
+                    TextView chips = UI.text(c, rline, 13, UI.TEXT, false);
+                    chips.setSingleLine(true);
+                    chips.setPadding(UI.dp(c, 6), UI.dp(c, 1), UI.dp(c, 6), UI.dp(c, 1));
+                    chips.setBackgroundDrawable(UI.bubble(c, UI.TINT));
+                    foot.addView(chips);
+                    time.setPadding(UI.dp(c, 8), 0, 0, 0);
+                }
                 foot.addView(time);
-                TickView ticks = new TickView(c, m.optInt("ack"));
-                LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                tp.leftMargin = UI.dp(c, 4);
-                foot.addView(ticks, tp);
+                if (ticked) {
+                    TickView ticks = new TickView(c, m.optInt("ack"));
+                    LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                    tp.leftMargin = UI.dp(c, 4);
+                    foot.addView(ticks, tp);
+                }
                 b.addView(foot, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             } else {
                 b.addView(time);

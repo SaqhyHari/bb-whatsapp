@@ -22,6 +22,7 @@ Your main WhatsApp stays on your phone of choice. The Q20 is just another linked
 - Press and hold a message (or put the cursor on it and press the BlackBerry key) to reply to it, edit your own text (within WhatsApp's 15 minutes), forward it to another chat, delete it for you, or delete your own for everyone (within WhatsApp's time limit); send and receive text; photos and stickers shown inline; reply quotes; modern emoji drawn as pictures (Twemoji, bundled) in messages, the chat list and the message box, with a picker that has categories, flags and recently used
 - Voice notes: **play** them (the bridge converts Opus to WAV, because Android 4.3 can't play Opus) and **send** them (the phone records plain audio, the bridge encodes Ogg Opus with Chromium's WebCodecs, no ffmpeg)
 - Dark theme (three-dots menu, Dark theme / Light theme); the chat list shows its last known contents instantly while it refreshes
+- Reactions: react to any message (six quick ones or the whole emoji set) and see other people's reactions under the bubble
 - Delivery ticks on your own messages: clock, one tick (sent), two ticks (delivered), blue ticks (read)
 - Videos: download and play
 - Send photos from the camera or gallery
@@ -31,7 +32,7 @@ Your main WhatsApp stays on your phone of choice. The Q20 is just another linked
 
 ## What does not (yet)
 
-- Calls, link previews
+- Calls (the library has no call audio, so the Q20 cannot answer, place or even see them), link previews
 - Exposure control in the in-app camera: the Q20's Android camera layer reports no exposure range
 - Anything away from home: the bridge only accepts private-network addresses (see Security)
 
