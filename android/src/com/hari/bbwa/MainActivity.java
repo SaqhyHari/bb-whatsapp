@@ -24,6 +24,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle b) {
+        UI.theme(this);
         super.onCreate(b);
         if (Api.paired(this)) {
             openList();
@@ -35,7 +36,7 @@ public class MainActivity extends Activity {
         col.setPadding(p, p, p, p);
         col.setBackgroundColor(UI.BG);
 
-        col.addView(UI.text(this, "Pair with your bridge", 20, UI.GREEN, true), UI.wrap());
+        col.addView(UI.text(this, "Pair with your bridge", 20, UI.ACCENT, true), UI.wrap());
         col.addView(UI.text(this, "On the computer running the bridge, open http://localhost:3000/admin and press "
                 + "Show pairing code. Then scan the square, or type the details below.", 13, UI.GREY, false), UI.wrap());
 

@@ -43,10 +43,11 @@ public class PickImageActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle b) {
+        UI.theme(this);
         super.onCreate(b);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.WHITE);
+        root.setBackgroundColor(UI.SURFACE);
         root.addView(UI.header(this, "Choose a photo"), UI.wrap());
         status = UI.text(this, "Looking for photos...", 13, UI.GREY, false);
         status.setPadding(UI.dp(this, 10), UI.dp(this, 4), UI.dp(this, 10), UI.dp(this, 4));
@@ -170,7 +171,7 @@ public class PickImageActivity extends Activity {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(size, size);
             lp.rightMargin = UI.dp(c, 10);
             iv.setLayoutParams(lp);
-            iv.setBackgroundColor(Color.parseColor("#14000000"));
+            iv.setBackgroundColor(UI.TINT);
             iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
             iv.setTag(f.getPath());
             final int px = size;
@@ -189,7 +190,7 @@ public class PickImageActivity extends Activity {
 
             LinearLayout col = new LinearLayout(c);
             col.setOrientation(LinearLayout.VERTICAL);
-            TextView name = UI.text(c, f.getName(), 15, Color.BLACK, true);
+            TextView name = UI.text(c, f.getName(), 15, UI.TEXT, true);
             name.setSingleLine(true);
             name.setEllipsize(android.text.TextUtils.TruncateAt.END);
             col.addView(name);

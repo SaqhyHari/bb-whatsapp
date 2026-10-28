@@ -79,6 +79,7 @@ public class ScanActivity extends Activity implements SurfaceHolder.Callback, Ca
 
     @Override
     protected void onCreate(Bundle b) {
+        UI.theme(this);
         super.onCreate(b);
         Map<DecodeHintType, Object> hints = new EnumMap<DecodeHintType, Object>(DecodeHintType.class);
         hints.put(DecodeHintType.POSSIBLE_FORMATS, Collections.singletonList(BarcodeFormat.QR_CODE));

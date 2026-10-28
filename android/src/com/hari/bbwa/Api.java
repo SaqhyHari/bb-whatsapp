@@ -131,7 +131,37 @@ final class Api {
     }
 
     static JSONArray chats(Context c) throws Exception {
-        return new JSONArray(call(c, "GET", "/api/chats?limit=300", null));
+        String body = call(c, "GET", "/api/chats?limit=300", null);
+        JSONArray a = new JSONArray(body);
+        try { // kept so the chat list can appear at once next time, before the server answers
+            java.io.FileOutputStream out = new java.io.FileOutputStream(new java.io.File(c.getCacheDir(), "chats.json"));
+            try { out.write(body.getBytes("UTF-8")); } finally { out.close(); }
+        } catch (Exception ignored) {
+        }
+        return a;
+    }
+
+    /** The chat list as last fetched, or null. */
+    static JSONArray cachedChats(Context c) {
+        try {
+            java.io.File f = new java.io.File(c.getCacheDir(), "chats.json");
+            if (!f.exists()) return null;
+            byte[] buf = new byte[(int) f.length()];
+            java.io.FileInputStream in = new java.io.FileInputStream(f);
+            try {
+                int got = 0;
+                while (got < buf.length) {
+                    int n = in.read(buf, got, buf.length - got);
+                    if (n < 0) break;
+                    got += n;
+                }
+            } finally {
+                in.close();
+            }
+            return new JSONArray(new String(buf, "UTF-8"));
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     static JSONArray messages(Context c, String chatId, int limit) throws Exception {

@@ -20,6 +20,7 @@ public class VideoActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle b) {
+        UI.theme(this);
         super.onCreate(b);
         final String id = getIntent().getStringExtra("id");
         if (id == null) {

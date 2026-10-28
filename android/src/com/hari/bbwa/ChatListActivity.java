@@ -63,6 +63,7 @@ public class ChatListActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle b) {
+        UI.theme(this);
         super.onCreate(b);
         if (!Api.paired(this)) {
             startActivity(new Intent(this, MainActivity.class));
@@ -74,7 +75,7 @@ public class ChatListActivity extends Activity {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.WHITE);
+        root.setBackgroundColor(UI.SURFACE);
 
         LinearLayout head = UI.header(this, pick ? "Forward to..." : "BB Whatsapp");
         if (!pick) head.addView(new DotsView(this));
@@ -134,6 +135,10 @@ public class ChatListActivity extends Activity {
         root.addView(list, UI.fill());
         setContentView(root);
         list.requestFocus(); // the trackpad scrolls the chats; tap the search box to type
+        JSONArray cached = Api.paired(this) ? Api.cachedChats(this) : null;
+        if (cached != null) { // last known list straight away; the refresh replaces it
+            for (int i = 0; i < cached.length(); i++) items.add(cached.optJSONObject(i));
+        }
         applyTab();
     }
 
@@ -262,11 +267,14 @@ public class ChatListActivity extends Activity {
 
     private void showMenu() {
         new AlertDialog.Builder(this)
-                .setItems(new String[] { "Refresh", "Status", "Unpair this phone" }, new DialogInterface.OnClickListener() {
+                .setItems(new String[] { "Refresh", "Status", UI.dark ? "Light theme" : "Dark theme", "Unpair this phone" }, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
                         if (which == 0) refresh();
                         else if (which == 1) showStatus();
-                        else confirmUnpair();
+                        else if (which == 2) {
+                            UI.setDark(ChatListActivity.this, !UI.dark);
+                            recreate();
+                        } else confirmUnpair();
                     }
                 }).show();
     }
@@ -294,6 +302,7 @@ public class ChatListActivity extends Activity {
     private void unpair() {
         PollService.stop(this);
         Api.sp(this).edit().clear().commit();
+        new java.io.File(getCacheDir(), "chats.json").delete();
         startActivity(new Intent(this, MainActivity.class));
         finish();
     }
@@ -344,7 +353,7 @@ public class ChatListActivity extends Activity {
 
             LinearLayout col = new LinearLayout(c);
             col.setOrientation(LinearLayout.VERTICAL);
-            TextView name = UI.text(c, o.optString("name"), 17, Color.BLACK, true);
+            TextView name = UI.text(c, o.optString("name"), 17, UI.TEXT, true);
             name.setSingleLine(true);
             name.setEllipsize(android.text.TextUtils.TruncateAt.END);
             TextView last = UI.text(c, o.optString("last"), 14, UI.GREY, false);

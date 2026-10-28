@@ -16,12 +16,61 @@ import android.widget.TextView;
 
 /** Shared look and small view builders (the UI is built in code, no layout XML). */
 final class UI {
-    static final int GREEN = Color.parseColor("#075E54");
-    static final int BG = Color.parseColor("#ECE5DD");
-    static final int MINE = Color.parseColor("#DCF8C6");
-    static final int GREY = Color.parseColor("#667781");
+    // palette: set by theme(), so these are not final
+    static boolean dark;
+    static int GREEN = Color.parseColor("#075E54");   // title bars
+    static int ACCENT = Color.parseColor("#075E54");  // coloured text on the page
+    static int BG = Color.parseColor("#ECE5DD");      // chat wallpaper
+    static int MINE = Color.parseColor("#DCF8C6");    // your bubbles
+    static int THEIRS = Color.WHITE;                  // their bubbles
+    static int GREY = Color.parseColor("#667781");
+    static int SURFACE = Color.WHITE;                 // lists and the message bar
+    static int TEXT = Color.BLACK;
+    static int TINT = Color.parseColor("#14000000");  // faint panel on a bubble
+    static int REPLY = Color.parseColor("#E3F2E8");
+    static int HILITE = Color.parseColor("#BBDEFB");
 
     private UI() {}
+
+    static boolean isDark(Context c) {
+        return c.getSharedPreferences("theme", Context.MODE_PRIVATE).getBoolean("dark", false);
+    }
+
+    static void setDark(Context c, boolean on) {
+        c.getSharedPreferences("theme", Context.MODE_PRIVATE).edit().putBoolean("dark", on).commit();
+    }
+
+    /** Call first in every activity's onCreate: picks the palette and the window theme (dialogs follow it). */
+    static void theme(android.app.Activity a) {
+        dark = isDark(a);
+        if (dark) {
+            GREEN = Color.parseColor("#1F2C34");
+            ACCENT = Color.parseColor("#00A884");
+            BG = Color.parseColor("#0B141A");
+            MINE = Color.parseColor("#005C4B");
+            THEIRS = Color.parseColor("#202C33");
+            GREY = Color.parseColor("#8696A0");
+            SURFACE = Color.parseColor("#111B21");
+            TEXT = Color.parseColor("#E9EDEF");
+            TINT = Color.parseColor("#22FFFFFF");
+            REPLY = Color.parseColor("#1F2C34");
+            HILITE = Color.parseColor("#2A3942");
+            a.setTheme(android.R.style.Theme_Holo_NoActionBar);
+        } else {
+            GREEN = Color.parseColor("#075E54");
+            ACCENT = GREEN;
+            BG = Color.parseColor("#ECE5DD");
+            MINE = Color.parseColor("#DCF8C6");
+            THEIRS = Color.WHITE;
+            GREY = Color.parseColor("#667781");
+            SURFACE = Color.WHITE;
+            TEXT = Color.BLACK;
+            TINT = Color.parseColor("#14000000");
+            REPLY = Color.parseColor("#E3F2E8");
+            HILITE = Color.parseColor("#BBDEFB");
+            a.setTheme(android.R.style.Theme_Holo_Light_NoActionBar);
+        }
+    }
 
     static int dp(Context c, int v) {
         return Math.round(v * c.getResources().getDisplayMetrics().density);

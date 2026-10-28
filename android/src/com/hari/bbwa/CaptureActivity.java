@@ -69,6 +69,7 @@ public class CaptureActivity extends Activity implements SurfaceHolder.Callback 
 
     @Override
     protected void onCreate(Bundle b) {
+        UI.theme(this);
         super.onCreate(b);
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
@@ -255,7 +256,7 @@ public class CaptureActivity extends Activity implements SurfaceHolder.Callback 
         } catch (RuntimeException e) {
             all = "Could not read the camera settings";
         }
-        TextView t = UI.text(this, all, 12, Color.BLACK, false);
+        TextView t = UI.text(this, all, 12, UI.TEXT, false);
         int p = UI.dp(this, 10);
         t.setPadding(p, p, p, p);
         android.widget.ScrollView sv = new android.widget.ScrollView(this);

@@ -101,6 +101,7 @@ public class ChatActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle b) {
+        UI.theme(this);
         super.onCreate(b);
         chatId = getIntent().getStringExtra("id");
         String name = getIntent().getStringExtra("name");
@@ -129,7 +130,7 @@ public class ChatActivity extends Activity {
         list.setCacheColorHint(Color.TRANSPARENT);
         // header row at the very top of the conversation: tap to fetch older messages
         LinearLayout olderWrap = new LinearLayout(this);
-        olderBtn = UI.text(this, "Load older messages", 14, UI.GREEN, true);
+        olderBtn = UI.text(this, "Load older messages", 14, UI.ACCENT, true);
         olderBtn.setGravity(Gravity.CENTER);
         olderBtn.setVisibility(View.GONE); // shown once the first messages are in, so it is never the initial selection
         olderBtn.setPadding(0, UI.dp(this, 12), 0, UI.dp(this, 12));
@@ -158,9 +159,9 @@ public class ChatActivity extends Activity {
         replyBar = new LinearLayout(this);
         replyBar.setOrientation(LinearLayout.HORIZONTAL);
         replyBar.setGravity(Gravity.CENTER_VERTICAL);
-        replyBar.setBackgroundColor(Color.parseColor("#E3F2E8"));
+        replyBar.setBackgroundColor(UI.REPLY);
         replyBar.setPadding(UI.dp(this, 10), 0, 0, 0);
-        replyText = UI.text(this, "", 13, Color.BLACK, false);
+        replyText = UI.text(this, "", 13, UI.TEXT, false);
         replyText.setSingleLine(true);
         replyText.setEllipsize(android.text.TextUtils.TruncateAt.END);
         replyBar.addView(replyText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -175,7 +176,7 @@ public class ChatActivity extends Activity {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setBackgroundColor(Color.WHITE);
+        bar.setBackgroundColor(UI.SURFACE);
         Button photoBtn = UI.button(this, "Photo");
         photoBtn.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { photoMenu(); }
@@ -571,7 +572,7 @@ public class ChatActivity extends Activity {
             return;
         }
         voice = v;
-        final TextView clockView = UI.text(this, "0:00", 30, Color.BLACK, true);
+        final TextView clockView = UI.text(this, "0:00", 30, UI.TEXT, true);
         clockView.setGravity(Gravity.CENTER);
         clockView.setPadding(0, UI.dp(this, 16), 0, UI.dp(this, 16));
         final Runnable tickClock = new Runnable() {
@@ -719,7 +720,7 @@ public class ChatActivity extends Activity {
             t.setPadding(pad, pad, pad, pad);
             t.setFocusable(true);
             t.setClickable(true);
-            t.setBackgroundDrawable(UI.focusFill(Color.parseColor("#BBDEFB")));
+            t.setBackgroundDrawable(UI.focusFill(UI.HILITE));
             t.setOnClickListener(new View.OnClickListener() {
                 public void onClick(View v) {
                     shown.clear();
@@ -974,15 +975,15 @@ public class ChatActivity extends Activity {
 
         LinearLayout q = new LinearLayout(c);
         q.setOrientation(LinearLayout.HORIZONTAL);
-        q.setBackgroundDrawable(UI.bubble(c, Color.parseColor("#14000000")));
+        q.setBackgroundDrawable(UI.bubble(c, UI.TINT));
         View bar = new View(c);
-        bar.setBackgroundColor(UI.GREEN);
+        bar.setBackgroundColor(UI.ACCENT);
         q.addView(bar, new LinearLayout.LayoutParams(UI.dp(c, 3), ViewGroup.LayoutParams.MATCH_PARENT));
 
         LinearLayout col = new LinearLayout(c);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setPadding(UI.dp(c, 6), UI.dp(c, 3), UI.dp(c, 6), UI.dp(c, 3));
-        TextView w = UI.text(c, who, 12, UI.GREEN, true);
+        TextView w = UI.text(c, who, 12, UI.ACCENT, true);
         w.setSingleLine(true);
         col.addView(w);
         TextView t = UI.text(c, qt.optString("text"), 13, UI.GREY, false);
@@ -1008,7 +1009,7 @@ public class ChatActivity extends Activity {
         }
         int h = (int) (w * ratio);
         FrameLayout box = new FrameLayout(c);
-        box.setBackgroundColor(Color.parseColor("#14000000"));
+        box.setBackgroundColor(UI.TINT);
         box.setLayoutParams(new LinearLayout.LayoutParams(w, h));
 
         final ImageView iv = new ImageView(c);
@@ -1054,7 +1055,7 @@ public class ChatActivity extends Activity {
         if (m.optString("id").equals(audioId) && audioState == 1) text = "[Loading...]";
         else if (m.optString("id").equals(audioId) && audioState == 2) text = "[Stop " + what + "]" + (secs > 0 ? "  " + clockOf(secs) : "");
         else text = "[Play " + what + "]" + (secs > 0 ? "  " + clockOf(secs) : "");
-        TextView t = UI.text(c, text, 16, UI.GREEN, true);
+        TextView t = UI.text(c, text, 16, UI.ACCENT, true);
         t.setPadding(UI.dp(c, 2), UI.dp(c, 6), UI.dp(c, 2), UI.dp(c, 6));
         t.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { toggleAudio(m); }
@@ -1071,10 +1072,10 @@ public class ChatActivity extends Activity {
         String text = (gif ? "[GIF]" : "[Video]") + (secs > 0 ? "  " + clockOf(secs) : "") + (size > 0 ? "  -  " + sizeOf(size) : "");
         LinearLayout box = new LinearLayout(c);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setBackgroundColor(Color.parseColor("#14000000"));
+        box.setBackgroundColor(UI.TINT);
         int p = UI.dp(c, 10);
         box.setPadding(p, p, p, p);
-        box.addView(UI.text(c, text, 16, UI.GREEN, true));
+        box.addView(UI.text(c, text, 16, UI.ACCENT, true));
         box.addView(UI.text(c, "Tap to play", 12, UI.GREY, false));
         box.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -1106,10 +1107,10 @@ public class ChatActivity extends Activity {
 
             LinearLayout b = new LinearLayout(c);
             b.setOrientation(LinearLayout.VERTICAL);
-            b.setBackgroundDrawable(UI.bubble(c, mine ? UI.MINE : Color.WHITE));
+            b.setBackgroundDrawable(UI.bubble(c, mine ? UI.MINE : UI.THEIRS));
             b.setPadding(UI.dp(c, 9), UI.dp(c, 5), UI.dp(c, 9), UI.dp(c, 4));
             if (group && !mine) {
-                TextView t = UI.text(c, number(m.optString("sender")), 12, UI.GREEN, true);
+                TextView t = UI.text(c, number(m.optString("sender")), 12, UI.ACCENT, true);
                 t.setSingleLine(true);
                 b.addView(t);
             }
@@ -1128,7 +1129,7 @@ public class ChatActivity extends Activity {
             // under a picture, voice note or video only the caption is text
             String text = (pic || voice || video) ? m.optString("body") : describe(m);
             if (text.length() > 0) {
-                TextView body = UI.text(c, text, 16, Color.BLACK, false);
+                TextView body = UI.text(c, text, 16, UI.TEXT, false);
                 body.setMaxWidth(c.getResources().getDisplayMetrics().widthPixels * 7 / 10);
                 b.addView(body);
             }

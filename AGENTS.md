@@ -42,6 +42,7 @@ Guide for AI coding agents (and a cheat-sheet for humans). Read [README.md](READ
 - Photo storage paths in BB10's runtime vary; `PickImageActivity` scans many roots and shows a "Looked in:" diagnostic when empty. `ACTION_GET_CONTENT` also works.
 - The "complete setup" nag that buzzes the phone is a BB10 OS matter, parked.
 - Emoji: the Android 4.3 font has no modern emoji, so `EmojiText.java` swaps each emoji for a Twemoji PNG (`android/assets/emoji/<hex>.png`, 48 px, CC-BY 4.0; `build.sh` packs the folder with `aapt2 link -A`). `UI.text()` renders through it, the message box refreshes spans in `afterTextChanged`, and the picker categories are Unicode code-point ranges in `EmojiText.RANGES` (no emoji-test.txt). Text stays plain Unicode on the wire.
+- Theme: `UI.theme(activity)` must be the first line of every activity's `onCreate` (it sets the palette fields `UI.BG/TEXT/SURFACE/...` and the Holo window theme, so dialogs follow). Use those fields, never `Color.WHITE/BLACK`, for page surfaces and text. The choice lives in the `theme` prefs (not the paired-device prefs, which unpairing clears). The chat list caches its last response in `cache/chats.json` and deletes it on unpair.
 - Error text shown to the user comes from `Api.why()`; keep it truthful (don't map every failure to "cannot reach the server").
 
 **Bridge side (whatsapp-web.js 1.34.7 vs current WhatsApp Web)**
