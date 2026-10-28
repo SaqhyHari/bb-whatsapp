@@ -975,18 +975,18 @@ public class ChatActivity extends Activity {
 
         LinearLayout q = new LinearLayout(c);
         q.setOrientation(LinearLayout.HORIZONTAL);
-        q.setBackgroundDrawable(UI.bubble(c, UI.TINT));
+        q.setBackgroundDrawable(UI.bubble(c, UI.QUOTE_BG));
         View bar = new View(c);
-        bar.setBackgroundColor(UI.ACCENT);
+        bar.setBackgroundColor(UI.QUOTE_NAME);
         q.addView(bar, new LinearLayout.LayoutParams(UI.dp(c, 3), ViewGroup.LayoutParams.MATCH_PARENT));
 
         LinearLayout col = new LinearLayout(c);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setPadding(UI.dp(c, 6), UI.dp(c, 3), UI.dp(c, 6), UI.dp(c, 3));
-        TextView w = UI.text(c, who, 12, UI.ACCENT, true);
+        TextView w = UI.text(c, who, 12, UI.QUOTE_NAME, true);
         w.setSingleLine(true);
         col.addView(w);
-        TextView t = UI.text(c, qt.optString("text"), 13, UI.GREY, false);
+        TextView t = UI.text(c, qt.optString("text"), 13, UI.QUOTE_TEXT, false);
         t.setMaxLines(3);
         t.setEllipsize(android.text.TextUtils.TruncateAt.END);
         t.setMaxWidth(c.getResources().getDisplayMetrics().widthPixels * 6 / 10);

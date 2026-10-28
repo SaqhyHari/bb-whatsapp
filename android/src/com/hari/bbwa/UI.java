@@ -29,6 +29,9 @@ final class UI {
     static int TINT = Color.parseColor("#14000000");  // faint panel on a bubble
     static int REPLY = Color.parseColor("#E3F2E8");
     static int HILITE = Color.parseColor("#BBDEFB");
+    static int QUOTE_TEXT = Color.parseColor("#667781"); // a quoted message inside a bubble
+    static int QUOTE_NAME = Color.parseColor("#075E54");
+    static int QUOTE_BG = Color.parseColor("#14000000");
 
     private UI() {}
 
@@ -55,6 +58,9 @@ final class UI {
             TINT = Color.parseColor("#22FFFFFF");
             REPLY = Color.parseColor("#1F2C34");
             HILITE = Color.parseColor("#2A3942");
+            QUOTE_TEXT = Color.parseColor("#D5DEE3");
+            QUOTE_NAME = Color.parseColor("#9BF2CD");
+            QUOTE_BG = Color.parseColor("#55000000");
             a.setTheme(android.R.style.Theme_Holo_NoActionBar);
         } else {
             GREEN = Color.parseColor("#075E54");
@@ -68,6 +74,9 @@ final class UI {
             TINT = Color.parseColor("#14000000");
             REPLY = Color.parseColor("#E3F2E8");
             HILITE = Color.parseColor("#BBDEFB");
+            QUOTE_TEXT = GREY;
+            QUOTE_NAME = GREEN;
+            QUOTE_BG = TINT;
             a.setTheme(android.R.style.Theme_Holo_Light_NoActionBar);
         }
     }
