@@ -131,7 +131,7 @@ final class Api {
     }
 
     static JSONArray chats(Context c) throws Exception {
-        return new JSONArray(call(c, "GET", "/api/chats?limit=100", null));
+        return new JSONArray(call(c, "GET", "/api/chats?limit=300", null));
     }
 
     static JSONArray messages(Context c, String chatId, int limit) throws Exception {
@@ -233,9 +233,29 @@ final class Api {
         return new JSONObject(call(c, "POST", "/api/chats/" + enc(chatId) + "/messages/" + enc(msgId) + "/edit", b.toString()));
     }
 
+    /** Deletes a message for you, or for everyone (own messages, within WhatsApp's time limit). */
+    static JSONObject delete(Context c, String chatId, String msgId, boolean everyone) throws Exception {
+        JSONObject b = new JSONObject();
+        b.put("everyone", everyone);
+        return new JSONObject(call(c, "POST", "/api/chats/" + enc(chatId) + "/messages/" + enc(msgId) + "/delete", b.toString()));
+    }
+
+    /** Forwards a message to another chat. */
+    static void forward(Context c, String chatId, String msgId, String toChatId) throws Exception {
+        JSONObject b = new JSONObject();
+        b.put("to", toChatId);
+        call(c, "POST", "/api/chats/" + enc(chatId) + "/messages/" + enc(msgId) + "/forward", b.toString());
+    }
+
     static JSONObject send(Context c, String chatId, String text) throws Exception {
+        return send(c, chatId, text, null);
+    }
+
+    /** Sends text; with quotedId it is a reply to that message. */
+    static JSONObject send(Context c, String chatId, String text, String quotedId) throws Exception {
         JSONObject b = new JSONObject();
         b.put("text", text);
+        if (quotedId != null && quotedId.length() > 0) b.put("quotedId", quotedId);
         return new JSONObject(call(c, "POST", "/api/chats/" + enc(chatId) + "/messages", b.toString()));
     }
 
@@ -254,7 +274,15 @@ final class Api {
                     // not JSON: fall through to the generic text
                 }
             }
-            if (x.code == 409) return "This message can no longer be edited (WhatsApp allows 15 minutes, text only).";
+            if (x.code == 409) { // the bridge says why WhatsApp refused (too old, not allowed, ...)
+                try {
+                    String why = new JSONObject(x.getMessage()).optString("error");
+                    if (why.length() > 0) return why.substring(0, 1).toUpperCase() + why.substring(1);
+                } catch (Exception ignored) {
+                    // not JSON: fall through to the generic text
+                }
+                return "WhatsApp refused this (it may be too old)";
+            }
             if (x.code == 404) return "Message not found on the server.";
             return "Server error " + x.code;
         }

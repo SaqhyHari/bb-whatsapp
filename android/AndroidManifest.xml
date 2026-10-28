@@ -28,7 +28,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".ChatListActivity" />
+        <activity
+            android:name=".ChatListActivity"
+            android:windowSoftInputMode="stateHidden|adjustResize" />
         <activity android:name=".ImageActivity" />
         <activity android:name=".ScanActivity" />
         <activity android:name=".CaptureActivity" />

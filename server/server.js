@@ -79,6 +79,8 @@ const q = {
   since: db.prepare('SELECT * FROM messages WHERE seq > ? AND live = 1 ORDER BY seq ASC LIMIT 200'),
   delMsg: db.prepare('DELETE FROM messages WHERE wa_id = ?'),
   metaOf: db.prepare('SELECT meta FROM messages WHERE wa_id = ?'),
+  byId: db.prepare('SELECT * FROM messages WHERE wa_id = ?'),
+  lastPerChat: db.prepare("SELECT chat_id, MAX(ts) AS ts FROM messages WHERE type NOT IN ('deleted', 'e2e_notification', 'notification_template') GROUP BY chat_id"),
   maxSeq: db.prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM messages'),
   deviceByHash: db.prepare('SELECT * FROM devices WHERE token_hash = ?'),
   addDevice: db.prepare('INSERT INTO devices (id, name, token_hash, created) VALUES (?, ?, ?, ?)'),
@@ -118,6 +120,25 @@ function restoreEdited(m, body) {
   q.delMsg.run(m.id._serialized);
   return store(m, true);
 }
+// Deleting: a message deleted for everyone becomes type "revoked" (the app shows "This message was deleted");
+// one deleted just for you becomes a "deleted" marker the app removes. Either way the row is stored again as
+// a new row (new seq) so polling clients notice. Returns the new row, or null when the message was never stored.
+function rewrite(id, type) {
+  const r = q.byId.get(id);
+  if (!r) return null;
+  q.delMsg.run(id);
+  q.insertMsg.run(id, r.chat_id, r.from_me, r.sender, '', type, r.ts, 0, 1, type === 'revoked' ? 'revoked' : '', null, null, r.ack === undefined ? null : r.ack);
+  return fromRow(q.byId.get(id));
+}
+client.on('message_revoke_everyone', (after, before) => {
+  try {
+    const id = (before && before.id && before.id._serialized) || (after && after.id && after.id._serialized);
+    if (id) rewrite(id, 'revoked');
+  } catch (e) { console.error('revoke event failed:', e.message); }
+});
+client.on('message_revoke_me', (m) => {
+  try { if (m && m.id) rewrite(m.id._serialized, 'deleted'); } catch (e) { console.error('revoke-me event failed:', e.message); }
+});
 // Ticks: WhatsApp reports delivery/read state changes of your own messages. Stored again as a new row so
 // polling clients notice (the same trick as edits).
 client.on('message_ack', (m, ack) => {
@@ -305,22 +326,54 @@ async function infoOf(chatId) {
   return info;
 }
 
+// A chat is "real" when it holds at least one message that is not a system notice. Chats whose newest message
+// is a real one are real at once; the rest are checked by looking at their recent messages (remembered for a while).
+const NOTICE_TYPES = new Set(['e2e_notification', 'notification_template']);
+const realCache = new Map();
+async function isRealChat(c) {
+  const last = c.lastMessage;
+  if (last && !NOTICE_TYPES.has(last.type)) return true;
+  const id = c.id._serialized;
+  const hit = realCache.get(id);
+  if (hit && Date.now() - hit.at < 30 * 60 * 1000) return hit.real;
+  let real = true; // when in doubt, show the chat
+  try {
+    const msgs = await c.fetchMessages({ limit: 25 });
+    real = msgs.some((m) => !NOTICE_TYPES.has(m.type) && m.type !== 'unknown' && !(m._data && m._data.viewMode === 'HIDDEN'));
+  } catch (_) { /* keep it */ }
+  realCache.set(id, { real, at: Date.now() });
+  return real;
+}
+
 let chatCache = { at: 0, data: null };
 app.get('/api/chats', auth, ready, wrap(async (req, res) => {
-  const limit = Math.min(Number(req.query.limit) || 30, 100);
+  const limit = Math.min(Number(req.query.limit) || 30, 300);
   if (!chatCache.data || Date.now() - chatCache.at > 5000) {
     const chats = await client.getChats();
-    for (const c of chats) chatInfo.set(c.id._serialized, { name: c.name || c.id.user, archived: !!c.archived, at: Date.now() });
-    chatCache = {
-      at: Date.now(),
-      data: chats.map((c) => ({
-        id: c.id._serialized, name: c.name || c.id.user, isGroup: !!c.isGroup, archived: !!c.archived,
-        unread: c.unreadCount || 0, ts: c.timestamp || 0,
-        last: c.lastMessage ? (c.lastMessage.body || LABELS[c.lastMessage.type] || '').slice(0, 120) : '',
-        // when the last message is yours: its delivery state, for the ticks in the chat list
-        lastAck: c.lastMessage && c.lastMessage.fromMe && Number.isInteger(c.lastMessage.ack) ? c.lastMessage.ack : null,
-      })),
-    };
+    // WhatsApp Web's chat timestamps can lag (a chat you just wrote in may still look old), so the newest real
+    // message this bridge stored for a chat counts too.
+    const seen = new Map(q.lastPerChat.all().map((r) => [r.chat_id, r.ts]));
+    // WhatsApp Web also keeps chats that hold nothing but system notices (e.g. "messages are end-to-end encrypted");
+    // the phone doesn't list those, so neither do we.
+    const visible = [];
+    for (let i = 0; i < chats.length; i += 6) {
+      const group = chats.slice(i, i + 6);
+      const flags = await Promise.all(group.map(isRealChat));
+      group.forEach((c, k) => { if (flags[k]) visible.push(c); });
+    }
+    for (const c of visible) chatInfo.set(c.id._serialized, { name: c.name || c.id.user, archived: !!c.archived, at: Date.now() });
+    const data = visible.map((c, idx) => ({
+      idx, // WhatsApp's own position, which keeps pinned chats in the order you pinned them
+      id: c.id._serialized, name: c.name || c.id.user, isGroup: !!c.isGroup, archived: !!c.archived, pinned: !!c.pinned,
+      unread: c.unreadCount || 0, ts: Math.max(c.timestamp || 0, seen.get(c.id._serialized) || 0),
+      last: c.lastMessage ? (c.lastMessage.body || LABELS[c.lastMessage.type] || '').slice(0, 120) : '',
+      // when the last message is yours: its delivery state, for the ticks in the chat list
+      lastAck: c.lastMessage && c.lastMessage.fromMe && Number.isInteger(c.lastMessage.ack) ? c.lastMessage.ack : null,
+    }));
+    // pinned chats first, in WhatsApp's own (pin) order; everything else newest first
+    data.sort((a, b) => (Number(b.pinned) - Number(a.pinned)) || (a.pinned ? a.idx - b.idx : b.ts - a.ts));
+    for (const d of data) delete d.idx;
+    chatCache = { at: Date.now(), data };
   }
   res.json(chatCache.data.slice(0, limit));
 }));
@@ -342,7 +395,9 @@ app.get('/api/chats/:chatId/messages', auth, ready, validChat, wrap(async (req, 
 app.post('/api/chats/:chatId/messages', auth, ready, validChat, wrap(async (req, res) => {
   const text = req.body && typeof req.body.text === 'string' ? req.body.text : '';
   if (!text.trim() || text.length > 4096) return res.status(400).json({ error: 'text required (max 4096)' });
-  const m = await client.sendMessage(req.params.chatId, text);
+  // an optional quotedId makes it a reply to that message
+  const quotedId = req.body && typeof req.body.quotedId === 'string' && MSG_ID.test(req.body.quotedId) ? req.body.quotedId : '';
+  const m = await client.sendMessage(req.params.chatId, text, quotedId ? { quotedMessageId: quotedId } : {});
   res.json(store(m, true) || { id: m.id._serialized });
 }));
 
@@ -359,6 +414,72 @@ app.post('/api/chats/:chatId/messages/:id/edit', auth, ready, validChat, wrap(as
   if (!edited) return res.status(409).json({ error: 'cannot be edited any more' });
   const row = restoreEdited(m, text);
   res.json(row || { id });
+}));
+
+// A message of this chat, looked up by id; answers 400/404 itself and returns null when it can't.
+async function chatMessage(req, res) {
+  const id = req.params.id;
+  if (!MSG_ID.test(id)) { res.status(400).json({ error: 'bad id' }); return null; }
+  // The message id identifies it on its own. (Comparing the chat id as well broke for chats that WhatsApp
+  // addresses by two different ids, e.g. @lid and @c.us.)
+  const m = await client.getMessageById(id).catch((e) => { console.error('message lookup failed:', e.message); return null; });
+  if (!m) { console.error('message not found by WhatsApp (id length ' + id.length + ')'); res.status(404).json({ error: 'message not found' }); return null; }
+  return m;
+}
+
+// Delete a message: {"everyone": true} removes it for everyone (own messages, within WhatsApp's time limit),
+// otherwise only from this account's view. The library quietly falls back to "delete for me" when everyone-delete
+// isn't allowed, so that case is checked first and refused.
+app.post('/api/chats/:chatId/messages/:id/delete', auth, ready, validChat, wrap(async (req, res) => {
+  const m = await chatMessage(req, res);
+  if (!m) return;
+  const id = m.id._serialized;
+  store(m); // make sure a row exists to be rewritten
+  if (req.body && req.body.everyone) {
+    const allowed = await client.pupPage.evaluate(async (mid) => {
+      const { Msg } = window.require('WAWebCollections');
+      const msg = Msg.get(mid) || (await Msg.getMessagesById([mid]))?.messages?.[0];
+      if (!msg) return false;
+      const cap = window.require('WAWebMsgActionCapability');
+      return !!(cap.canSenderRevokeMsg(msg) || cap.canAdminRevokeMsg(msg));
+    }, id);
+    if (!allowed) return res.status(409).json({ error: 'cannot be deleted for everyone (too old, or not yours)' });
+    await m.delete(true);
+    return res.json(rewrite(id, 'revoked') || { id, type: 'revoked' });
+  }
+  await m.delete(false);
+  rewrite(id, 'deleted');
+  res.json({ id, type: 'deleted' });
+}));
+
+// Forward a message to another chat: {"to": "<chat id>"}. whatsapp-web.js's own forward() relies on a WhatsApp Web
+// module that no longer exists, so the message is sent again instead: text as text, and files by downloading
+// them and sending them on. It arrives as a normal message (without WhatsApp's "Forwarded" tag).
+const FORWARDABLE_MEDIA = new Set(['image', 'video', 'audio', 'ptt', 'document', 'sticker']);
+app.post('/api/chats/:chatId/messages/:id/forward', auth, ready, validChat, wrap(async (req, res) => {
+  const to = req.body && typeof req.body.to === 'string' ? req.body.to : '';
+  if (!CHAT_ID.test(to)) return res.status(400).json({ error: 'bad destination chat' });
+  const m = await chatMessage(req, res);
+  if (!m) return;
+  try {
+    if (m.type === 'chat' && m.body) {
+      await client.sendMessage(to, m.body);
+    } else if (FORWARDABLE_MEDIA.has(m.type) && m.hasMedia) {
+      const media = await m.downloadMedia();
+      if (!media) return res.status(409).json({ error: 'the file is no longer available to forward' });
+      await client.sendMessage(to, media, {
+        caption: m.body || undefined,
+        sendAudioAsVoice: m.type === 'ptt',
+        sendMediaAsSticker: m.type === 'sticker',
+      });
+    } else {
+      return res.status(409).json({ error: 'this kind of message cannot be forwarded here' });
+    }
+  } catch (e) {
+    console.error('forward failed:', e.message);
+    return res.status(409).json({ error: 'could not forward: ' + String(e.message).split('\n')[0].slice(0, 140) });
+  }
+  res.json({ ok: true });
 }));
 
 // Profile picture as a JPEG, cached for a day (a missing/private photo is cached too).

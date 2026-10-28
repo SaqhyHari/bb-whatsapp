@@ -17,7 +17,9 @@ Your main WhatsApp stays on your phone of choice. The Q20 is just another linked
 ## What works
 
 - Chat list with profile pictures, Chats / Archived tabs, unread counts
-- Edit your own text messages (press and hold, within WhatsApp's 15 minutes); send and receive text; photos and stickers shown inline; reply quotes; emoji picker
+- Search chats (box under the tabs, by name or last message, archived chats included)
+- Trackpad friendly: the Chats/Archived tabs can be reached with the cursor, and the **BlackBerry key** opens the menu (the message menu in a chat, the three-dots menu in the chat list)
+- Press and hold a message (or put the cursor on it and press the BlackBerry key) to reply to it, edit your own text (within WhatsApp's 15 minutes), forward it to another chat, delete it for you, or delete your own for everyone (within WhatsApp's time limit); send and receive text; photos and stickers shown inline; reply quotes; emoji picker
 - Voice notes: **play** them (the bridge converts Opus to WAV, because Android 4.3 can't play Opus) and **send** them (the phone records plain audio, the bridge encodes Ogg Opus with Chromium's WebCodecs, no ffmpeg)
 - Delivery ticks on your own messages: clock, one tick (sent), two ticks (delivered), blue ticks (read)
 - Videos: download and play

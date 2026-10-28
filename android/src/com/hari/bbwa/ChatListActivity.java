@@ -9,12 +9,17 @@ import android.content.Intent;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.BaseAdapter;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
@@ -24,7 +29,12 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
+/**
+ * The list of chats. With the extra "pick" it is a chooser instead (used to forward a message): tapping a
+ * chat returns its "id" and "name" rather than opening it.
+ */
 public class ChatListActivity extends Activity {
     private static final int REFRESH_MS = 8000;
 
@@ -39,6 +49,9 @@ public class ChatListActivity extends Activity {
     private boolean showArchived;
     private boolean visible;
     private boolean loading;
+    private boolean pick;
+    private EditText search;
+    private String query = "";
 
     private final Runnable tick = new Runnable() {
         public void run() {
@@ -56,14 +69,15 @@ public class ChatListActivity extends Activity {
             finish();
             return;
         }
-        showArchived = Api.sp(this).getBoolean("showArchived", false);
+        pick = getIntent().getBooleanExtra("pick", false);
+        showArchived = !pick && Api.sp(this).getBoolean("showArchived", false);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.WHITE);
 
-        LinearLayout head = UI.header(this, "BB Whatsapp");
-        head.addView(new DotsView(this));
+        LinearLayout head = UI.header(this, pick ? "Forward to..." : "BB Whatsapp");
+        if (!pick) head.addView(new DotsView(this));
         root.addView(head, UI.wrap());
 
         LinearLayout tabs = new LinearLayout(this);
@@ -76,6 +90,23 @@ public class ChatListActivity extends Activity {
         barArchived = bar[0];
         root.addView(tabs, UI.wrap());
 
+        // typing here searches every chat (archived ones too) by name or last message
+        search = new EditText(this);
+        search.setHint("Search chats");
+        search.setSingleLine(true);
+        search.setTextSize(15);
+        search.addTextChangedListener(new TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+
+            public void onTextChanged(CharSequence s, int a, int b, int c) {}
+
+            public void afterTextChanged(Editable s) {
+                query = s.toString().trim().toLowerCase(Locale.getDefault());
+                applyTab();
+            }
+        });
+        root.addView(search, UI.wrap());
+
         status = UI.text(this, "Loading...", 13, UI.GREY, false);
         status.setPadding(UI.dp(this, 10), UI.dp(this, 4), UI.dp(this, 10), UI.dp(this, 4));
         root.addView(status, UI.wrap());
@@ -86,6 +117,14 @@ public class ChatListActivity extends Activity {
         list.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             public void onItemClick(AdapterView<?> p, View v, int pos, long id) {
                 JSONObject c = shown.get(pos);
+                if (pick) { // chooser: hand the chat back instead of opening it
+                    Intent r = new Intent();
+                    r.putExtra("id", c.optString("id"));
+                    r.putExtra("name", c.optString("name"));
+                    setResult(RESULT_OK, r);
+                    finish();
+                    return;
+                }
                 Intent i = new Intent(ChatListActivity.this, ChatActivity.class);
                 i.putExtra("id", c.optString("id"));
                 i.putExtra("name", c.optString("name"));
@@ -94,6 +133,7 @@ public class ChatListActivity extends Activity {
         });
         root.addView(list, UI.fill());
         setContentView(root);
+        list.requestFocus(); // the trackpad scrolls the chats; tap the search box to type
         applyTab();
     }
 
@@ -110,6 +150,12 @@ public class ChatListActivity extends Activity {
         cell.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { selectTab(archived); }
         });
+        // reachable with the trackpad: it lights up when the cursor is on it, and pressing the trackpad selects it
+        cell.setFocusable(true);
+        StateListDrawable focusLook = new StateListDrawable();
+        focusLook.addState(new int[] { android.R.attr.state_focused }, new ColorDrawable(Color.parseColor("#55FFFFFF")));
+        focusLook.addState(new int[] {}, new ColorDrawable(Color.TRANSPARENT));
+        cell.setBackgroundDrawable(focusLook);
         row.addView(cell, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         barOut[0] = bar;
         return t;
@@ -117,7 +163,7 @@ public class ChatListActivity extends Activity {
 
     private void selectTab(boolean archived) {
         showArchived = archived;
-        Api.sp(this).edit().putBoolean("showArchived", archived).commit();
+        if (!pick) Api.sp(this).edit().putBoolean("showArchived", archived).commit();
         applyTab();
     }
 
@@ -132,7 +178,11 @@ public class ChatListActivity extends Activity {
                 if (archived) unreadArchived++;
                 else unreadChats++;
             }
-            if (archived == showArchived) shown.add(o);
+            boolean match = query.length() == 0
+                    ? archived == showArchived
+                    : o.optString("name").toLowerCase(Locale.getDefault()).contains(query)
+                            || o.optString("last").toLowerCase(Locale.getDefault()).contains(query);
+            if (match) shown.add(o);
         }
         tabChats.setText("Chats" + (unreadChats > 0 ? " (" + unreadChats + ")" : ""));
         tabArchived.setText("Archived" + (unreadArchived > 0 ? " (" + unreadArchived + ")" : ""));
@@ -141,7 +191,7 @@ public class ChatListActivity extends Activity {
         adapter.notifyDataSetChanged();
         if (!items.isEmpty() && shown.isEmpty()) {
             status.setTextColor(UI.GREY);
-            status.setText(showArchived ? "No archived chats" : "No chats");
+            status.setText(query.length() > 0 ? "No chats match" : showArchived ? "No archived chats" : "No chats");
             status.setVisibility(View.VISIBLE);
         } else if (!items.isEmpty()) {
             status.setVisibility(View.GONE);
@@ -153,8 +203,10 @@ public class ChatListActivity extends Activity {
         super.onResume();
         if (!Api.paired(this)) return;
         visible = true;
-        ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).cancelAll();
-        startService(new Intent(this, PollService.class));
+        if (!pick) {
+            ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).cancelAll();
+            startService(new Intent(this, PollService.class));
+        }
         Bg.MAIN.removeCallbacks(tick);
         Bg.MAIN.post(tick);
     }
@@ -166,9 +218,20 @@ public class ChatListActivity extends Activity {
         Bg.MAIN.removeCallbacks(tick);
     }
 
+    /** The BlackBerry key opens the same menu as the three dots. */
+    @Override
+    public boolean onKeyDown(int code, android.view.KeyEvent ev) {
+        if (code == android.view.KeyEvent.KEYCODE_MENU && !pick) {
+            if (ev.getRepeatCount() == 0) showMenu();
+            return true;
+        }
+        return super.onKeyDown(code, ev);
+    }
+
     @Override
     public void onBackPressed() {
-        if (showArchived) selectTab(false); // Back from Archived returns to Chats first
+        if (query.length() > 0) search.setText(""); // Back clears a search first
+        else if (showArchived) selectTab(false); // Back from Archived returns to Chats first
         else super.onBackPressed();
     }
 

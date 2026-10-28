@@ -53,6 +53,7 @@ public class ChatActivity extends Activity {
     private static final int REQ_CAPTURE = 11;
     private static final int REQ_PICK = 12;
     private static final int REQ_SYSTEM = 13;
+    private static final int REQ_FORWARD = 14;
 
     /** Chat currently on screen, so the background service does not notify for it. */
     static volatile String openChat = "";
@@ -70,6 +71,9 @@ public class ChatActivity extends Activity {
     private boolean polling;
     private BaseAdapter adapter;
     private ListView list;
+    private LinearLayout replyBar;
+    private TextView replyText;
+    private JSONObject replyTo; // the message the next text message answers
     private TextView olderBtn;
     private static final int OLDER_STEP = 40;
     private static final int OLDER_MAX = 300;
@@ -142,10 +146,29 @@ public class ChatActivity extends Activity {
             public boolean onItemLongClick(AdapterView<?> p, View v, int pos, long id) {
                 int i = pos - list.getHeaderViewsCount();
                 if (i < 0 || i >= msgs.size()) return false;
-                return offerEdit(msgs.get(i));
+                messageMenu(msgs.get(i));
+                return true;
             }
         });
         root.addView(list, UI.fill());
+
+        // shown above the message box while you are replying to a message
+        replyBar = new LinearLayout(this);
+        replyBar.setOrientation(LinearLayout.HORIZONTAL);
+        replyBar.setGravity(Gravity.CENTER_VERTICAL);
+        replyBar.setBackgroundColor(Color.parseColor("#E3F2E8"));
+        replyBar.setPadding(UI.dp(this, 10), 0, 0, 0);
+        replyText = UI.text(this, "", 13, Color.BLACK, false);
+        replyText.setSingleLine(true);
+        replyText.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        replyBar.addView(replyText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        Button replyCancel = UI.button(this, "X");
+        replyCancel.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { clearReply(); }
+        });
+        replyBar.addView(replyCancel);
+        replyBar.setVisibility(View.GONE);
+        root.addView(replyBar, UI.wrap());
 
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
@@ -302,6 +325,127 @@ public class ChatActivity extends Activity {
     }
 
     private static final long EDIT_WINDOW_S = 15 * 60; // WhatsApp's own limit
+    private static final long REVOKE_WINDOW_S = 2 * 86400L + 12 * 3600L; // "delete for everyone" window (2 days 12 hours)
+    private JSONObject forwarding; // the message waiting for the chat the user picks
+
+    /** Press and hold on a message: edit, forward and delete choices that apply to it. */
+    private void messageMenu(final JSONObject m) {
+        String type = m.optString("type");
+        boolean mine = m.optBoolean("fromMe");
+        boolean gone = type.equals("revoked");
+        long age = System.currentTimeMillis() / 1000L - m.optLong("ts");
+        final List<String> labels = new ArrayList<String>();
+        if (!gone) labels.add("Reply");
+        if (mine && type.equals("chat") && !m.optBoolean("hasMedia") && age <= EDIT_WINDOW_S + 60) labels.add("Edit");
+        if (!gone) labels.add("Forward");
+        labels.add("Delete for me");
+        if (mine && !gone && age <= REVOKE_WINDOW_S) labels.add("Delete for everyone");
+        new AlertDialog.Builder(this).setItems(labels.toArray(new String[labels.size()]), new DialogInterface.OnClickListener() {
+            public void onClick(DialogInterface d, int which) {
+                String pick = labels.get(which);
+                if (pick.equals("Reply")) setReply(m);
+                else if (pick.equals("Edit")) offerEdit(m);
+                else if (pick.equals("Forward")) startForward(m);
+                else confirmDelete(m, pick.equals("Delete for everyone"));
+            }
+        }).show();
+    }
+
+    /** Starts a reply: shows who and what is being answered above the message box. */
+    private void setReply(JSONObject m) {
+        replyTo = m;
+        String who = m.optBoolean("fromMe") ? "yourself" : group ? number(m.optString("sender")) : title;
+        String what = describe(m).replace('\n', ' ');
+        if (what.length() > 60) what = what.substring(0, 60) + "...";
+        replyText.setText("Replying to " + who + ": " + what);
+        replyBar.setVisibility(View.VISIBLE);
+        input.requestFocus();
+    }
+
+    private void clearReply() {
+        replyTo = null;
+        replyBar.setVisibility(View.GONE);
+    }
+
+    /**
+     * The BlackBerry key does what press-and-hold does for a finger: it opens the menu for the message the
+     * trackpad cursor is on (the newest one until you move it).
+     */
+    @Override
+    public boolean onKeyDown(int code, KeyEvent ev) {
+        if (code == KeyEvent.KEYCODE_MENU) {
+            if (ev.getRepeatCount() == 0) menuForSelected();
+            return true;
+        }
+        return super.onKeyDown(code, ev);
+    }
+
+    private void menuForSelected() {
+        int i = list.getSelectedItemPosition() - list.getHeaderViewsCount();
+        if (i < 0 || i >= msgs.size()) {
+            Toast.makeText(this, "Move the cursor onto a message with the trackpad first", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        messageMenu(msgs.get(i));
+    }
+
+    private void startForward(JSONObject m) {
+        forwarding = m;
+        Intent i = new Intent(this, ChatListActivity.class);
+        i.putExtra("pick", true);
+        startActivityForResult(i, REQ_FORWARD);
+    }
+
+    private void confirmForward(final String toId, String toName) {
+        final JSONObject m = forwarding;
+        forwarding = null;
+        if (m == null) return;
+        new AlertDialog.Builder(this).setTitle("Forward message?")
+                .setMessage("Send it to " + (toName.length() > 0 ? toName : toId) + "?")
+                .setPositiveButton("Forward", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) { doForward(m, toId); }
+                }).setNegativeButton("Cancel", null).show();
+    }
+
+    private void doForward(final JSONObject m, final String toId) {
+        Toast.makeText(this, "Forwarding...", Toast.LENGTH_SHORT).show();
+        Bg.go(new Bg.Job() {
+            public Object run() throws Exception {
+                Api.forward(ChatActivity.this, chatId, m.optString("id"), toId);
+                return null;
+            }
+        }, new Bg.Done() {
+            public void done(Object result, Exception e) {
+                if (isFinishing()) return;
+                Toast.makeText(ChatActivity.this, e == null ? "Forwarded" : "Not forwarded: " + Api.why(e), Toast.LENGTH_LONG).show();
+            }
+        });
+    }
+
+    private void confirmDelete(final JSONObject m, final boolean everyone) {
+        new AlertDialog.Builder(this).setTitle(everyone ? "Delete for everyone?" : "Delete for you?")
+                .setMessage(everyone ? "It will be removed for everyone in this chat."
+                        : "It will be removed from your WhatsApp. Other people in the chat still see it.")
+                .setPositiveButton("Delete", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) { doDelete(m, everyone); }
+                }).setNegativeButton("Cancel", null).show();
+    }
+
+    private void doDelete(final JSONObject m, final boolean everyone) {
+        Bg.go(new Bg.Job() {
+            public Object run() throws Exception { return Api.delete(ChatActivity.this, chatId, m.optString("id"), everyone); }
+        }, new Bg.Done() {
+            public void done(Object result, Exception e) {
+                if (isFinishing()) return;
+                if (e != null) {
+                    Toast.makeText(ChatActivity.this, "Not deleted: " + Api.why(e), Toast.LENGTH_LONG).show();
+                    return;
+                }
+                JSONObject r = (JSONObject) result;
+                if (r != null && add(r)) sortAndShow();
+            }
+        });
+    }
 
     /** Offers editing for your own text messages. Returns true when the press was used. */
     private boolean offerEdit(final JSONObject m) {
@@ -366,6 +510,16 @@ public class ChatActivity extends Activity {
     private boolean add(JSONObject m) {
         if (m == null) return false;
         String id = m.optString("id");
+        if (m.optString("type").equals("deleted")) { // deleted for you (here or on another device): drop it
+            ids.remove(id);
+            for (int i = 0; i < msgs.size(); i++) {
+                if (msgs.get(i).optString("id").equals(id)) {
+                    msgs.remove(i);
+                    return true;
+                }
+            }
+            return false;
+        }
         if (ids.add(id)) {
             msgs.add(m);
             return true;
@@ -373,7 +527,8 @@ public class ChatActivity extends Activity {
         for (int i = 0; i < msgs.size(); i++) {
             JSONObject old = msgs.get(i);
             if (!old.optString("id").equals(id)) continue;
-            if (old.optString("body").equals(m.optString("body")) && isEdited(old) == isEdited(m)
+            if (old.optString("body").equals(m.optString("body")) && old.optString("type").equals(m.optString("type"))
+                    && isEdited(old) == isEdited(m)
                     && old.optInt("ack", -9) == m.optInt("ack", -9)) return false;
             msgs.set(i, m);
             return true;
@@ -477,10 +632,13 @@ public class ChatActivity extends Activity {
     private void send() {
         final String text = input.getText().toString().trim();
         if (text.length() == 0) return;
+        final JSONObject quoting = replyTo;
+        final String quotedId = quoting == null ? null : quoting.optString("id");
         input.setText("");
+        clearReply();
         sendBtn.setEnabled(false);
         Bg.go(new Bg.Job() {
-            public Object run() throws Exception { return Api.send(ChatActivity.this, chatId, text); }
+            public Object run() throws Exception { return Api.send(ChatActivity.this, chatId, text, quotedId); }
         }, new Bg.Done() {
             public void done(Object result, Exception e) {
                 sendBtn.setEnabled(true);
@@ -488,6 +646,7 @@ public class ChatActivity extends Activity {
                 if (e != null) {
                     input.setText(text);
                     input.setSelection(text.length());
+                    if (quoting != null) setReply(quoting); // keep the reply so it can be sent again
                     Toast.makeText(ChatActivity.this, "Not sent: " + Api.why(e), Toast.LENGTH_LONG).show();
                     return;
                 }
@@ -585,7 +744,13 @@ public class ChatActivity extends Activity {
     @Override
     protected void onActivityResult(int req, int result, Intent data) {
         super.onActivityResult(req, result, data);
+        if (req == REQ_FORWARD && result != RESULT_OK) forwarding = null;
         if (result != RESULT_OK || data == null) return;
+        if (req == REQ_FORWARD) {
+            confirmForward(data.getStringExtra("id") == null ? "" : data.getStringExtra("id"),
+                    data.getStringExtra("name") == null ? "" : data.getStringExtra("name"));
+            return;
+        }
         if (req == REQ_SYSTEM) {
             if (data.getData() != null) importPicked(data.getData());
             return;

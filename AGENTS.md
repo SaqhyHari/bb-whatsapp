@@ -22,7 +22,7 @@ Guide for AI coding agents (and a cheat-sheet for humans). Read [README.md](READ
 
 ## Layout and entry points
 
-- `server/server.js`: whole bridge. Endpoints: `POST /api/pair`, `GET /api/ping|status|chats|updates`, `GET/POST /api/chats/:id/messages`, `POST /api/chats/:id/messages/:msgId/edit` (own text, 15 min), `POST /api/chats/:id/photo` (raw JPEG/PNG body, `?caption=`), `GET /api/media/:id[?fmt=wav]`, `GET /api/avatar/:chatId`; loopback-only `/admin`, `/admin/state`, `POST /admin/pair-code`, `DELETE /admin/devices/:id`.
+- `server/server.js`: whole bridge. Endpoints: `POST /api/pair`, `GET /api/ping|status|chats|updates`, `GET/POST /api/chats/:id/messages` (POST body `{text, quotedId?}`; `quotedId` makes it a reply), `POST /api/chats/:id/messages/:msgId/edit` (own text, 15 min), `POST .../:msgId/delete` (`{"everyone":bool}`; everyone-delete is pre-checked because the library silently falls back to delete-for-me), `POST .../:msgId/forward` (`{"to":chatId}`), `POST /api/chats/:id/voice` (WAV body), `POST /api/chats/:id/photo` (raw JPEG/PNG body, `?caption=`), `GET /api/media/:id[?fmt=wav]`, `GET /api/avatar/:chatId`; loopback-only `/admin`, `/admin/state`, `POST /admin/pair-code`, `DELETE /admin/devices/:id`.
 - `server/patches/apply.js`: idempotent edits to `node_modules/whatsapp-web.js`, run on every start (see gotchas). Re-run `npm install` and the server re-applies them.
 - `server/admin.html`: WhatsApp link QR, pairing code and QR, device list.
 - `android/src/com/hari/bbwa/`: `ChatListActivity`, `ChatActivity`, `PollService` (15 s polling, notifications), `CaptureActivity` (camera), `PickImageActivity`, `ScanActivity` (QR), `Api` (HTTP client), `Media`/`Avatars` (caches), `UI` (helpers, no layouts XML).
@@ -35,6 +35,8 @@ Guide for AI coding agents (and a cheat-sheet for humans). Read [README.md](READ
 - No Gradle, no AndroidX, no lambdas needing newer APIs; Java 8 source but only API 17 classes. `java.nio.charset.StandardCharsets` is API 19 and crashes on the device: that is why ZXing is pinned to **3.3.0** (3.5.x references it).
 - Package id `com.hari.bbwa` and the `bbchat://` pairing scheme are intentionally unchanged so new APKs install over old ones with the same signing key. Don't rename them.
 - Opus audio is unsupported on the device; voice notes are converted server-side. Sending: `Voice.java` records 16 kHz mono PCM to WAV (`AudioRecord`), `POST /api/chats/:id/voice` uploads it, and `server/voice.js` encodes Opus with WebCodecs `AudioEncoder` inside Chromium and wraps it in Ogg (hand-written muxer, CRC checked), then sends with `sendAudioAsVoice`.
+- Forwarding: `whatsapp-web.js`'s `Message.forward()` needs a WhatsApp Web module (`WAWebChatForwardMessage`) that no longer exists, so the bridge re-sends text or downloaded media instead (no "Forwarded" tag). The BlackBerry key arrives as `KEYCODE_MENU`.
+- If the bridge sits in state `starting` for minutes after a restart, a clean `./scripts/bb.sh restart bridge` fixes it.
 - Ticks: the bridge stores `ack` (0 sending, 1 sent, 2 delivered, 3 read, 4 played, -1 failed) from `message_ack` events and re-stores the row (new seq) so polling clients see it; the app draws them in `TickView.java` (no font glyphs).
 - The camera (`android.hardware.Camera`) reports no exposure-compensation range (min = max = 0) and ignores metering areas; exposure control was tried and abandoned. Focus areas work.
 - Photo storage paths in BB10's runtime vary; `PickImageActivity` scans many roots and shows a "Looked in:" diagnostic when empty. `ACTION_GET_CONTENT` also works.

@@ -131,6 +131,8 @@ public class PollService extends Service {
     private boolean worthNotifying(JSONObject m) {
         if (m == null || m.optBoolean("fromMe")) return false;
         if (m.optBoolean("archived")) return false; // archived chats stay silent
+        String kind = m.optString("type");
+        if (kind.equals("revoked") || kind.equals("deleted")) return false; // a deletion is not a new message
         JSONObject meta = m.optJSONObject("meta");
         if (meta != null && meta.optBoolean("edited")) return false; // an edit is not a new message
         String chat = m.optString("chatId");
