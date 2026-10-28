@@ -28,6 +28,10 @@ run/
 logs/
 dropbox/.pin
 
+# Drafts for announcing the project (kept local)
+REDDIT_POST.md
+reddit*
+
 # Local/OS/editor noise
 .DS_Store
 *.log
