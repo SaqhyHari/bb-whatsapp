@@ -19,7 +19,7 @@ Your main WhatsApp stays on your phone of choice. The Q20 is just another linked
 - Chat list with profile pictures, Chats / Archived tabs, unread counts
 - Search chats (box under the tabs, by name or last message, archived chats included)
 - Trackpad friendly: the Chats/Archived tabs can be reached with the cursor, and the **BlackBerry key** opens the menu (the message menu in a chat, the three-dots menu in the chat list)
-- Press and hold a message (or put the cursor on it and press the BlackBerry key) to reply to it, edit your own text (within WhatsApp's 15 minutes), forward it to another chat, delete it for you, or delete your own for everyone (within WhatsApp's time limit); send and receive text; photos and stickers shown inline; reply quotes; emoji picker
+- Press and hold a message (or put the cursor on it and press the BlackBerry key) to reply to it, edit your own text (within WhatsApp's 15 minutes), forward it to another chat, delete it for you, or delete your own for everyone (within WhatsApp's time limit); send and receive text; photos and stickers shown inline; reply quotes; modern emoji drawn as pictures (Twemoji, bundled) in messages, the chat list and the message box, with a picker that has categories, flags and recently used
 - Voice notes: **play** them (the bridge converts Opus to WAV, because Android 4.3 can't play Opus) and **send** them (the phone records plain audio, the bridge encodes Ogg Opus with Chromium's WebCodecs, no ffmpeg)
 - Delivery ticks on your own messages: clock, one tick (sent), two ticks (delivered), blue ticks (read)
 - Videos: download and play
@@ -122,6 +122,7 @@ This project also stands on other people's work:
 - **[whatsapp-web.js](https://github.com/pedroslopez/whatsapp-web.js)** by Pedro S. Lopez and contributors (Apache-2.0), the library the bridge is built on, and **[Puppeteer](https://pptr.dev)** (Apache-2.0) which drives Chromium.
 - **[NovelProfessor/whatsapp-server](https://github.com/NovelProfessor/whatsapp-server)** by Christopher Gomes (ISC), the server for a Nokia J2ME WhatsApp client. Its idea of a WhatsApp-Web-backed REST bridge with a SQLite message store, polled by a tiny old-phone client, inspired this project's architecture. No code was copied; our server was written from scratch with authentication and a private-network guard added.
 - **[ZXing](https://github.com/zxing/zxing)** core 3.3.0 by Sean Owen and the ZXing authors (Apache-2.0) for QR scanning in the app.
+- **[Twemoji](https://github.com/jdecked/twemoji)** graphics (Copyright 2019 Twitter, Inc and other contributors; maintained by the jdecked fork) licensed [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/), bundled resized to 48 px in `android/assets/emoji/` so emoji show on Android 4.3. The licence text is in that folder.
 - **[Express](https://expressjs.com)** (MIT) and **[node-qrcode](https://github.com/soldair/node-qrcode)** (MIT) in the bridge.
 - **[Eclipse Temurin](https://adoptium.net)** JDK 17, **Node.js**, and the **Android command-line tools / SDK** (Google, Android SDK license) are downloaded by the setup script, not redistributed.
 - The Q20 has a community of owners keeping BB10 alive; thanks to everyone who documented the Android runtime's quirks.

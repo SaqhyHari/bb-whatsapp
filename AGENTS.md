@@ -41,6 +41,7 @@ Guide for AI coding agents (and a cheat-sheet for humans). Read [README.md](READ
 - The camera (`android.hardware.Camera`) reports no exposure-compensation range (min = max = 0) and ignores metering areas; exposure control was tried and abandoned. Focus areas work.
 - Photo storage paths in BB10's runtime vary; `PickImageActivity` scans many roots and shows a "Looked in:" diagnostic when empty. `ACTION_GET_CONTENT` also works.
 - The "complete setup" nag that buzzes the phone is a BB10 OS matter, parked.
+- Emoji: the Android 4.3 font has no modern emoji, so `EmojiText.java` swaps each emoji for a Twemoji PNG (`android/assets/emoji/<hex>.png`, 48 px, CC-BY 4.0; `build.sh` packs the folder with `aapt2 link -A`). `UI.text()` renders through it, the message box refreshes spans in `afterTextChanged`, and the picker categories are Unicode code-point ranges in `EmojiText.RANGES` (no emoji-test.txt). Text stays plain Unicode on the wire.
 - Error text shown to the user comes from `Api.why()`; keep it truthful (don't map every failure to "cannot reach the server").
 
 **Bridge side (whatsapp-web.js 1.34.7 vs current WhatsApp Web)**
@@ -58,4 +59,4 @@ Guide for AI coding agents (and a cheat-sheet for humans). Read [README.md](READ
 
 ## Ideas not done yet
 
-Sending voice notes (WhatsApp needs Ogg Opus), scroll-back for older messages, link previews, silencing muted chats like archived ones, emoji image fallback (Twemoji) if glyphs don't render, remote access away from home, an always-on host.
+Sending voice notes (WhatsApp needs Ogg Opus), scroll-back for older messages, link previews, silencing muted chats like archived ones, remote access away from home, an always-on host.

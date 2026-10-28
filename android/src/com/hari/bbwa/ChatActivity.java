@@ -19,12 +19,14 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
+import android.widget.AbsListView;
 import android.widget.AdapterView;
 import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.GridView;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
@@ -213,12 +215,14 @@ public class ChatActivity extends Activity {
 
             public void afterTextChanged(Editable s) {
                 sendBtn.setText(s.toString().trim().length() == 0 ? "Voice" : "Send");
+                EmojiText.refresh(ChatActivity.this, s, input.getTextSize());
             }
         });
         bar.addView(sendBtn);
         root.addView(bar, UI.wrap());
         setContentView(root);
 
+        EmojiText.warmUp(this); // so the emoji picker opens at once
         load();
     }
 
@@ -276,7 +280,8 @@ public class ChatActivity extends Activity {
                 seq = ((Long) r[1]).longValue();
                 olderBtn.setVisibility(View.VISIBLE);
                 sortAndShow();
-                list.setSelection(list.getCount() - 1); // cursor starts on the newest message, not on the top button
+                list.setSelection(list.getCount() - 1); // newest message is in view, not the top button
+                input.requestFocus(); // typing goes straight to the message box
                 status.setText("");
                 status.setVisibility(View.GONE);
             }
@@ -357,7 +362,7 @@ public class ChatActivity extends Activity {
         String who = m.optBoolean("fromMe") ? "yourself" : group ? number(m.optString("sender")) : title;
         String what = describe(m).replace('\n', ' ');
         if (what.length() > 60) what = what.substring(0, 60) + "...";
-        replyText.setText("Replying to " + who + ": " + what);
+        replyText.setText(EmojiText.renderSp(this, "Replying to " + who + ": " + what, 13));
         replyBar.setVisibility(View.VISIBLE);
         input.requestFocus();
     }
@@ -657,34 +662,84 @@ public class ChatActivity extends Activity {
     }
 
     private void emojiPicker() {
-        final String[] emoji = Emoji.all();
-        GridView grid = new GridView(this);
+        final List<List<String>> cats = EmojiText.categories(this);
+        final List<String> recent = EmojiText.recent(this);
+        final List<String> shown = new ArrayList<String>();
+        final GridView grid = new GridView(this);
         grid.setNumColumns(6);
-        grid.setAdapter(new BaseAdapter() {
-            public int getCount() { return emoji.length; }
+        final int cell = UI.dp(this, 46);
+        final BaseAdapter adapter = new BaseAdapter() {
+            public int getCount() { return shown.size(); }
 
-            public Object getItem(int i) { return emoji[i]; }
+            public Object getItem(int i) { return shown.get(i); }
 
             public long getItemId(int i) { return i; }
 
             public View getView(int i, View reuse, ViewGroup parent) {
-                TextView t = new TextView(ChatActivity.this);
-                t.setText(emoji[i]);
-                t.setTextSize(26);
-                t.setGravity(Gravity.CENTER);
-                t.setPadding(0, UI.dp(ChatActivity.this, 6), 0, UI.dp(ChatActivity.this, 6));
-                return t;
+                ImageView v = reuse instanceof ImageView ? (ImageView) reuse : new ImageView(ChatActivity.this);
+                v.setLayoutParams(new AbsListView.LayoutParams(cell, cell));
+                v.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                int pad = UI.dp(ChatActivity.this, 5);
+                v.setPadding(pad, pad, pad, pad);
+                v.setImageBitmap(EmojiText.picture(ChatActivity.this, shown.get(i)));
+                return v;
             }
-        });
+        };
+        grid.setAdapter(adapter);
         grid.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             public void onItemClick(AdapterView<?> p, View v, int pos, long id) {
+                String name = shown.get(pos);
+                String text = EmojiText.toText(name);
                 int s = Math.max(0, input.getSelectionStart());
                 int e = Math.max(0, input.getSelectionEnd());
-                input.getText().replace(Math.min(s, e), Math.max(s, e), emoji[pos], 0, emoji[pos].length());
+                input.getText().replace(Math.min(s, e), Math.max(s, e), text, 0, text.length());
+                EmojiText.used(ChatActivity.this, name);
             }
         });
+
+        // one picture per category along the top; the cursor can reach them
+        final List<List<String>> lists = new ArrayList<List<String>>();
+        final List<String> icons = new ArrayList<String>();
+        if (!recent.isEmpty()) {
+            lists.add(recent);
+            icons.add("1f553");
+        }
+        for (int i = 0; i < cats.size(); i++) {
+            lists.add(cats.get(i));
+            icons.add(EmojiText.CATEGORY_ICONS[i]);
+        }
+        final LinearLayout tabs = new LinearLayout(this);
+        final ImageView[] tabViews = new ImageView[lists.size()];
+        for (int i = 0; i < lists.size(); i++) {
+            final int which = i;
+            ImageView t = new ImageView(this);
+            t.setImageBitmap(EmojiText.picture(this, icons.get(i)));
+            t.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            int pad = UI.dp(this, 7);
+            t.setPadding(pad, pad, pad, pad);
+            t.setFocusable(true);
+            t.setClickable(true);
+            t.setBackgroundDrawable(UI.focusFill(Color.parseColor("#BBDEFB")));
+            t.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    shown.clear();
+                    shown.addAll(lists.get(which));
+                    adapter.notifyDataSetChanged();
+                    grid.setSelection(0);
+                    for (int k = 0; k < tabViews.length; k++) tabViews[k].setSelected(k == which);
+                }
+            });
+            tabViews[i] = t;
+            tabs.addView(t, new LinearLayout.LayoutParams(UI.dp(this, 44), UI.dp(this, 44)));
+        }
+        HorizontalScrollView tabScroll = new HorizontalScrollView(this);
+        tabScroll.addView(tabs);
+
         LinearLayout box = new LinearLayout(this);
-        box.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, UI.dp(this, 300)));
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.addView(tabScroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, UI.dp(this, 46)));
+        box.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, UI.dp(this, 280)));
+        tabViews[recent.size() >= 12 ? 0 : tabViews.length - cats.size()].performClick(); // Recent only opens first once it has something to show
         new AlertDialog.Builder(this).setTitle("Emoji").setView(box).setPositiveButton("Done", null).show();
     }
 

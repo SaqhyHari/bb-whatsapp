@@ -4,7 +4,9 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -31,11 +33,21 @@ final class UI {
 
     static TextView text(Context c, String s, int sp, int color, boolean bold) {
         TextView t = new TextView(c);
-        t.setText(s);
+        t.setText(EmojiText.renderSp(c, s, sp));
         t.setTextSize(sp);
         t.setTextColor(color);
         if (bold) t.setTypeface(Typeface.DEFAULT_BOLD);
         return t;
+    }
+
+    /** Transparent, but filled with `color` while selected, focused or pressed. */
+    static StateListDrawable focusFill(int color) {
+        StateListDrawable d = new StateListDrawable();
+        d.addState(new int[] { android.R.attr.state_selected }, new ColorDrawable(color));
+        d.addState(new int[] { android.R.attr.state_focused }, new ColorDrawable(color));
+        d.addState(new int[] { android.R.attr.state_pressed }, new ColorDrawable(color));
+        d.addState(new int[] {}, new ColorDrawable(Color.TRANSPARENT));
+        return d;
     }
 
     static Button button(Context c, String label) {

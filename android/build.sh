@@ -20,9 +20,12 @@ KS_PASS="${KS_PASS:-android}" # throwaway local signing key; set KS_PASS to use 
 # launcher icons are not committed (see README, Credits): draw a plain placeholder if none exist
 [ -f "$APP/res/drawable/ic_launcher.png" ] || python3 -I "$APP/tools/make_placeholder_icon.py"
 
+# index of the emoji pictures, so the app need not list 4000 asset files at run time
+(cd "$APP/assets/emoji" && ls *.png | sed 's/\.png$//' > names.txt)
+
 rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/classes"
 "$BT/aapt2" compile --dir "$APP/res" -o "$OUT/res.zip"
-"$BT/aapt2" link -o "$OUT/base.apk" -I "$AJ" --manifest "$APP/AndroidManifest.xml" \
+"$BT/aapt2" link -o "$OUT/base.apk" -I "$AJ" --manifest "$APP/AndroidManifest.xml" -A "$APP/assets" \
   --java "$OUT/gen" --min-sdk-version 16 --target-sdk-version 17 \
   --version-code "$CODE" --version-name "$VER" "$OUT/res.zip"
 # third-party jars in libs/ (ZXing) go on the compile classpath and into the dex
