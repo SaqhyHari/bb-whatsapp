@@ -1126,7 +1126,7 @@ public class ChatActivity extends Activity {
         String from = qt.optString("from");
         String who;
         if ("You".equals(from)) who = "You";
-        else if (group) who = number(qt.optString("participant"));
+        else if (group) who = qt.optString("name").length() > 0 ? qt.optString("name") : number(qt.optString("participant"));
         else who = title;
         if (who.length() == 0) who = "Message";
 

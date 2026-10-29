@@ -359,7 +359,18 @@ public class ChatListActivity extends Activity {
             TextView last = UI.text(c, o.optString("last"), 14, UI.GREY, false);
             last.setSingleLine(true);
             last.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            col.addView(name);
+            if (o.optBoolean("muted")) { // a crossed-out speaker after the name
+                LinearLayout nameRow = new LinearLayout(c);
+                nameRow.setOrientation(LinearLayout.HORIZONTAL);
+                nameRow.setGravity(Gravity.CENTER_VERTICAL);
+                nameRow.addView(name, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                mp.leftMargin = UI.dp(c, 6);
+                nameRow.addView(new MuteView(c), mp);
+                col.addView(nameRow);
+            } else {
+                col.addView(name);
+            }
             if (o.has("lastAck") && !o.isNull("lastAck")) { // your own message is last: show its ticks before the text
                 LinearLayout lastRow = new LinearLayout(c);
                 lastRow.setOrientation(LinearLayout.HORIZONTAL);

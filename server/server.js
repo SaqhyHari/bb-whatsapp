@@ -72,7 +72,7 @@ const q = {
   insertMsg: db.prepare(`INSERT INTO messages
     (wa_id, chat_id, from_me, sender, body, type, ts, has_media, live, raw, quoted, meta, ack)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(wa_id) DO UPDATE SET type = excluded.type, body = excluded.body,
+    ON CONFLICT(wa_id) DO UPDATE SET sender = excluded.sender, type = excluded.type, body = excluded.body,
       has_media = excluded.has_media, raw = excluded.raw, quoted = excluded.quoted, meta = excluded.meta,
       ack = COALESCE(excluded.ack, ack)`),
   fromMeByStanza: db.prepare('SELECT from_me FROM messages WHERE wa_id LIKE ? LIMIT 1'),
@@ -106,7 +106,8 @@ client.on('disconnected', (reason) => {
   wa.state = 'disconnected';
   console.log('WhatsApp disconnected:', reason);
 });
-client.on('message_create', (m) => {
+client.on('message_create', async (m) => {
+  try { await warmNames([m]); } catch (_) { /* names are a nicety */ }
   try { store(m, true); } catch (e) {
     const t = (v) => (v === null ? 'null' : typeof v);
     console.error('store failed:', e.message, '| id', t(m.id && m.id._serialized), 'from', t(m.from), 'to', t(m.to),
@@ -182,6 +183,44 @@ client.initialize().catch((e) => { wa.state = 'error'; console.error('initialize
 
 const widStr = (x) => (x ? (x._serialized || x.$1 || (typeof x === 'string' ? x : (x.user && x.server ? `${x.user}@${x.server}` : ''))) : '');
 
+// Who is this sender? Group messages carry WhatsApp's internal ids (digits@lid), not names. Look the contact up
+// (saved name, then the name they chose themselves, then a phone number) and remember it; store() and quotedOf()
+// read the cache synchronously, so names are resolved just before a message is stored.
+const nameCache = new Map();
+const NAME_TTL_MS = 6 * 3600 * 1000;
+const nameOf = (id) => (nameCache.get(id) || {}).name || '';
+async function resolveName(id) {
+  if (!id || typeof id !== 'string') return '';
+  const hit = nameCache.get(id);
+  if (hit && Date.now() - hit.at < NAME_TTL_MS) return hit.name;
+  let name = '';
+  try {
+    const ct = await client.getContactById(id);
+    name = ct.name || ct.pushname || ct.shortName || '';
+    if (!name && ct.number) name = '+' + ct.number;
+  } catch (_) { /* fall through */ }
+  if (!name && id.endsWith('@lid')) {
+    try {
+      const r = await client.getContactLidAndPhone([id]);
+      const pn = r && r[0] && r[0].pn;
+      if (pn) name = '+' + String(pn).split('@')[0];
+    } catch (_) { /* no phone number known */ }
+  }
+  nameCache.set(id, { name, at: name ? Date.now() : Date.now() - NAME_TTL_MS + 60 * 1000 }); // retry a miss in a minute
+  return name;
+}
+// Resolve everyone a group message mentions: its author and the author of the message it quotes.
+async function warmNames(msgs) {
+  const ids = new Set();
+  for (const m of msgs) {
+    if (m.fromMe) continue;
+    if (m.author) ids.add(widStr(m.author));
+    const qp = m._data && m._data.quotedParticipant;
+    if (qp) ids.add(widStr(qp));
+  }
+  await Promise.all([...ids].filter(Boolean).map((id) => resolveName(id)));
+}
+
 // The message this one replies to: text (or a bracketed label for media) and who wrote it.
 function quotedOf(m) {
   const d = m._data || {};
@@ -198,7 +237,7 @@ function quotedOf(m) {
   if (!mine && participant && client.info && client.info.wid) {
     mine = participant.split('@')[0] === widStr(client.info.wid).split('@')[0];
   }
-  return { from: mine ? 'You' : '', participant, text: text.slice(0, 160) };
+  return { from: mine ? 'You' : '', participant, name: mine ? '' : nameOf(participant), text: text.slice(0, 160) };
 }
 
 // Small facts the app needs to lay out media bubbles without downloading them.
@@ -226,7 +265,7 @@ function store(m, live = false) {
     id: m.id._serialized,
     chatId,
     fromMe: m.fromMe,
-    sender: (m._data && m._data.notifyName) || m.author || m.from || '',
+    sender: nameOf(widStr(m.author)) || (m._data && m._data.notifyName) || m.author || m.from || '',
     body: m.body || (m.type === 'call_log' ? ((m._data && m._data.isVideoCall) ? '[Video call]' : '[Voice call]') : ''),
     type: m.type,
     ts: m.timestamp,
@@ -338,15 +377,22 @@ app.get('/api/status', auth, (req, res) => res.json({ state: wa.state }));
 
 // Name and archived state per chat, for notifications. Archived state can change, so it is re-read
 // every INFO_TTL_MS; the app stays silent for archived chats.
+// Muted right now? (-1 or no expiry = forever; otherwise the expiry may be in seconds or milliseconds)
+function mutedNow(c) {
+  if (!c || !c.isMuted) return false;
+  const e = Number(c.muteExpiration) || 0;
+  if (e <= 0) return true;
+  return (e > 1e11 ? e : e * 1000) > Date.now();
+}
 const chatInfo = new Map();
 const INFO_TTL_MS = 15 * 1000;
 async function infoOf(chatId) {
   const hit = chatInfo.get(chatId);
   if (hit && Date.now() - hit.at < INFO_TTL_MS) return hit;
-  let info = hit || { name: '', archived: false, at: 0 };
+  let info = hit || { name: '', archived: false, muted: false, at: 0 };
   try {
     const c = await client.getChatById(chatId);
-    info = { name: c.name || (c.id && c.id.user) || info.name, archived: !!c.archived, at: Date.now() };
+    info = { name: c.name || (c.id && c.id.user) || info.name, archived: !!c.archived, muted: mutedNow(c), at: Date.now() };
   } catch (_) {
     info = { ...info, at: Date.now() - INFO_TTL_MS + 5000 }; // lookup failed: try again shortly
   }
@@ -421,10 +467,10 @@ app.get('/api/chats', auth, ready, wrap(async (req, res) => {
       const got = await Promise.all(group.map((c) => lastOf(c).catch(() => ({ text: previewOf(c.lastMessage || {}), ack: null }))));
       group.forEach((c, k) => lasts.set(c.id._serialized, got[k]));
     }
-    for (const c of visible) chatInfo.set(c.id._serialized, { name: c.name || c.id.user, archived: !!c.archived, at: Date.now() });
+    for (const c of visible) chatInfo.set(c.id._serialized, { name: c.name || c.id.user, archived: !!c.archived, muted: mutedNow(c), at: Date.now() });
     const data = visible.map((c, idx) => ({
       idx, // WhatsApp's own position, which keeps pinned chats in the order you pinned them
-      id: c.id._serialized, name: c.name || c.id.user, isGroup: !!c.isGroup, archived: !!c.archived, pinned: !!c.pinned,
+      id: c.id._serialized, name: c.name || c.id.user, isGroup: !!c.isGroup, archived: !!c.archived, muted: mutedNow(c), pinned: !!c.pinned,
       unread: c.unreadCount || 0, ts: Math.max(c.timestamp || 0, seen.get(c.id._serialized) || 0),
       last: lasts.get(c.id._serialized).text,
       // when the last message is yours: its delivery state, for the ticks in the chat list
@@ -445,6 +491,7 @@ app.get('/api/chats/:chatId/messages', auth, ready, validChat, wrap(async (req, 
   // at the end), so a small limit can return the wrong slice. Over-fetch, sort, keep the newest.
   const msgs = await chat.fetchMessages({ limit: Math.min(600, limit * 3) });
   await Promise.all(msgs.map(async (m) => { m._reactions = await reactionsOf(m); })); // only touches messages that have any
+  if (req.params.chatId.endsWith('@g.us')) await warmNames(msgs);
   const out = [];
   for (const m of msgs) { const row = store(m); if (row) out.push(row); }
   out.sort((a, b) => a.ts - b.ts);
@@ -615,9 +662,10 @@ app.get('/api/updates', auth, wrap(async (req, res) => {
   const since = Math.max(0, Number(req.query.since) || 0);
   const messages = q.since.all(since).map(fromRow);
   for (const m of messages) { // names for notifications (cached after the first lookup)
-    const info = wa.state === 'ready' ? await infoOf(m.chatId) : { name: '', archived: false };
+    const info = wa.state === 'ready' ? await infoOf(m.chatId) : { name: '', archived: false, muted: false };
     m.chatName = info.name;
     m.archived = info.archived;
+    m.muted = !!info.muted;
     m.isGroup = m.chatId.endsWith('@g.us');
   }
   res.json({ seq: q.maxSeq.get().seq, messages });

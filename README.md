@@ -26,7 +26,7 @@ Your main WhatsApp stays on your phone of choice. The Q20 is just another linked
 - Delivery ticks on your own messages: clock, one tick (sent), two ticks (delivered), blue ticks (read)
 - Videos: download and play
 - Send photos from the camera or gallery
-- Background notifications (polling every 15 s); archived chats stay silent
+- Background notifications (polling every 15 s); archived and muted chats stay silent (muted ones show a crossed-out speaker in the chat list)
 - Scroll back through older messages ("Load older messages", up to 300)
 - Pair by scanning a QR code shown on the bridge's admin page
 

@@ -45,6 +45,7 @@ Guide for AI coding agents (and a cheat-sheet for humans). Read [README.md](READ
 - Theme: `UI.theme(activity)` must be the first line of every activity's `onCreate` (it sets the palette fields `UI.BG/TEXT/SURFACE/...` and the Holo window theme, so dialogs follow). Use those fields, never `Color.WHITE/BLACK`, for page surfaces and text. The choice lives in the `theme` prefs (not the paired-device prefs, which unpairing clears). The chat list caches its last response in `cache/chats.json` and deletes it on unpair.
 - Reactions live in `meta.reactions` (`[{e, n, me}]`); the `message_reaction` event re-stores the row (new seq) like edits and ticks, and `PollService` must not notify for rows that carry reactions.
 - Animated WebP stickers cannot be decoded by Android 4.3 (BitmapFactory returns null). `/api/media/:id?fmt=png` has the bridge's Chromium render the first frame to a PNG (cached as `.png`), and `Media.java` asks for it when the original won't decode.
+- Group senders arrive as internal ids (`digits@lid`). `resolveName()`/`warmNames()` in `server.js` look the contact up (saved name, push name, phone number via `getContactLidAndPhone`) into `nameCache` before a message is stored; `store()` and `quotedOf()` read the cache synchronously. Re-fetched history now also updates the stored `sender`.
 - Error text shown to the user comes from `Api.why()`; keep it truthful (don't map every failure to "cannot reach the server").
 
 **Bridge side (whatsapp-web.js 1.34.7 vs current WhatsApp Web)**
@@ -62,4 +63,4 @@ Guide for AI coding agents (and a cheat-sheet for humans). Read [README.md](READ
 
 ## Ideas not done yet
 
-Sending voice notes (WhatsApp needs Ogg Opus), scroll-back for older messages, link previews, silencing muted chats like archived ones, remote access away from home, an always-on host.
+Sending voice notes (WhatsApp needs Ogg Opus), scroll-back for older messages, link previews, remote access away from home, an always-on host.
