@@ -373,6 +373,32 @@ async function isRealChat(c) {
   return real;
 }
 
+// What the chat list shows as a chat's last message. WhatsApp Web's own `lastMessage` is the last one in its message
+// collection, which is not always the newest (history-synced call logs sit at the end, some entries have no text),
+// so when it looks wrong the recent messages are read and the newest real one wins. Remembered per chat.
+const lastCache = new Map();
+const previewOf = (m) => (m.body || LABELS[m.type] || '').slice(0, 120);
+async function lastOf(c) {
+  const lm = c.lastMessage;
+  const ackOf = (m) => (m && m.fromMe && Number.isInteger(m.ack) ? m.ack : null);
+  if (lm && lm.type !== 'call_log' && previewOf(lm) && (lm.timestamp || 0) >= (c.timestamp || 0)) {
+    return { text: previewOf(lm), ack: ackOf(lm) };
+  }
+  const id = c.id._serialized;
+  const stamp = `${c.timestamp || 0}:${lm && lm.id ? lm.id._serialized : ''}`;
+  const hit = lastCache.get(id);
+  if (hit && hit.stamp === stamp) return hit;
+  let msgs = [];
+  try { msgs = await c.fetchMessages({ limit: 15 }); } catch (_) { /* fall back to lastMessage */ }
+  const real = msgs.filter((m) => !NOTICE_TYPES.has(m.type) && m.type !== 'unknown' && m.type !== 'album'
+    && !(m._data && m._data.viewMode === 'HIDDEN'));
+  real.sort((a, b) => b.timestamp - a.timestamp);
+  const m = real[0] || lm;
+  const out = { stamp, text: m ? (previewOf(m) || '[Message]') : '', ack: ackOf(m) };
+  lastCache.set(id, out);
+  return out;
+}
+
 let chatCache = { at: 0, data: null };
 app.get('/api/chats', auth, ready, wrap(async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 30, 300);
@@ -389,14 +415,20 @@ app.get('/api/chats', auth, ready, wrap(async (req, res) => {
       const flags = await Promise.all(group.map(isRealChat));
       group.forEach((c, k) => { if (flags[k]) visible.push(c); });
     }
+    const lasts = new Map();
+    for (let i = 0; i < visible.length; i += 6) {
+      const group = visible.slice(i, i + 6);
+      const got = await Promise.all(group.map((c) => lastOf(c).catch(() => ({ text: previewOf(c.lastMessage || {}), ack: null }))));
+      group.forEach((c, k) => lasts.set(c.id._serialized, got[k]));
+    }
     for (const c of visible) chatInfo.set(c.id._serialized, { name: c.name || c.id.user, archived: !!c.archived, at: Date.now() });
     const data = visible.map((c, idx) => ({
       idx, // WhatsApp's own position, which keeps pinned chats in the order you pinned them
       id: c.id._serialized, name: c.name || c.id.user, isGroup: !!c.isGroup, archived: !!c.archived, pinned: !!c.pinned,
       unread: c.unreadCount || 0, ts: Math.max(c.timestamp || 0, seen.get(c.id._serialized) || 0),
-      last: c.lastMessage ? (c.lastMessage.body || LABELS[c.lastMessage.type] || '').slice(0, 120) : '',
+      last: lasts.get(c.id._serialized).text,
       // when the last message is yours: its delivery state, for the ticks in the chat list
-      lastAck: c.lastMessage && c.lastMessage.fromMe && Number.isInteger(c.lastMessage.ack) ? c.lastMessage.ack : null,
+      lastAck: lasts.get(c.id._serialized).ack,
     }));
     // pinned chats first, in WhatsApp's own (pin) order; everything else newest first
     data.sort((a, b) => (Number(b.pinned) - Number(a.pinned)) || (a.pinned ? a.idx - b.idx : b.ts - a.ts));
