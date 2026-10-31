@@ -896,7 +896,9 @@ public class ChatActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.addView(tabScroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, UI.dp(this, 46)));
-        box.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, UI.dp(this, 280)));
+        // on a short screen (the Q20 is square) the title, tabs and button leave less than 280dp: shrink the grid so no row hides behind Done
+        int room = getResources().getDisplayMetrics().heightPixels - UI.dp(this, 46 + 130);
+        box.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Math.max(cell * 2, Math.min(UI.dp(this, 280), room))));
         tabViews[recent.size() >= 12 ? 0 : tabViews.length - cats.size()].performClick(); // Recent only opens first once it has something to show
         self[0] = new AlertDialog.Builder(this).setTitle(handler == null ? "Emoji" : "React with").setView(box).setPositiveButton(handler == null ? "Done" : "Cancel", null).show();
     }

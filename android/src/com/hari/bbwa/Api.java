@@ -198,7 +198,39 @@ final class Api {
         }
     }
 
+    /**
+     * Uploads a photo. A dropped connection while the picture is still being sent is retried once: the
+     * bridge only acts on a complete body, so nothing can have been sent yet. A drop after the whole
+     * body went out is not retried (the photo may already be on its way) and is reported as such.
+     */
     static JSONObject sendPhoto(Context c, String chatId, byte[] jpeg, String caption) throws Exception {
+        try {
+            return postPhoto(c, chatId, jpeg, caption);
+        } catch (UploadInterrupted first) {
+            try {
+                Thread.sleep(1500);
+            } catch (InterruptedException ignored) {
+                // carry on with the retry
+            }
+            try {
+                return postPhoto(c, chatId, jpeg, caption);
+            } catch (UploadInterrupted second) {
+                throw (IOException) second.getCause();
+            }
+        }
+    }
+
+    /** The connection broke before the bridge had the whole photo. */
+    private static class UploadInterrupted extends Exception {
+        UploadInterrupted(IOException cause) { super(cause); }
+    }
+
+    /** The connection broke after the whole photo was sent, so we don't know whether it arrived. */
+    static class AnswerLost extends IOException {
+        AnswerLost(IOException cause) { super(cause.getMessage()); }
+    }
+
+    private static JSONObject postPhoto(Context c, String chatId, byte[] jpeg, String caption) throws Exception {
         HttpURLConnection h = (HttpURLConnection) new URL(base(c) + "/api/chats/" + enc(chatId) + "/photo"
                 + (caption.length() > 0 ? "?caption=" + enc(caption) : "")).openConnection();
         try {
@@ -210,12 +242,26 @@ final class Api {
             h.setRequestProperty("Connection", "close"); // never reuse a stale pooled connection for a big POST
             h.setDoOutput(true);
             h.setFixedLengthStreamingMode(jpeg.length);
-            OutputStream out = h.getOutputStream();
-            out.write(jpeg);
-            out.close();
-            int code = h.getResponseCode();
-            InputStream in = code < 400 ? h.getInputStream() : h.getErrorStream();
-            String text = in == null ? "" : readAll(in);
+            try {
+                OutputStream out = h.getOutputStream();
+                out.write(jpeg);
+                out.close();
+            } catch (java.net.SocketTimeoutException e) {
+                throw e; // slow, not dropped: the bridge may be busy, don't pile a second upload on it
+            } catch (IOException e) {
+                throw new UploadInterrupted(e);
+            }
+            int code;
+            String text;
+            try {
+                code = h.getResponseCode();
+                InputStream in = code < 400 ? h.getInputStream() : h.getErrorStream();
+                text = in == null ? "" : readAll(in);
+            } catch (java.net.SocketTimeoutException e) {
+                throw e;
+            } catch (java.net.SocketException e) {
+                throw new AnswerLost(e);
+            }
             if (code >= 400) throw new Err(code, text);
             return new JSONObject(text);
         } finally {
@@ -326,6 +372,12 @@ final class Api {
         if (e instanceof java.net.ConnectException || e instanceof java.net.SocketTimeoutException
                 || e instanceof java.net.UnknownHostException || e instanceof java.net.NoRouteToHostException) {
             return "Cannot reach the server";
+        }
+        if (e instanceof AnswerLost) {
+            return "Connection dropped while waiting for the answer. The photo may have been sent: check the chat before sending again.";
+        }
+        if (e instanceof java.net.SocketException) {
+            return "Wi-Fi connection dropped while sending (" + e.getMessage() + "). Try again.";
         }
         String m = e.getMessage();
         return e.getClass().getSimpleName() + (m == null ? "" : ": " + m);
