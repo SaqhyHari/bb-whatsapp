@@ -27,7 +27,8 @@ Guide for AI coding agents (and a cheat-sheet for humans). Read [README.md](READ
 - `server/admin.html`: WhatsApp link QR, pairing code and QR, device list.
 - `android/src/com/hari/bbwa/`: `ChatListActivity`, `ChatActivity`, `PollService` (15 s polling, notifications), `CaptureActivity` (camera), `PickImageActivity`, `ScanActivity` (QR), `Api` (HTTP client), `Media`/`Avatars` (caches), `UI` (helpers, no layouts XML).
 - `android/build.sh`: aapt2 compile/link, javac `-source 8` against `android-17`, d8 `--min-api 16`, zipalign, apksigner **v1 only**. Reads `android/VERSION`.
-- `dropbox/server.py`: stdlib file server with PIN, thumbnails via macOS `sips`.
+- `dropbox/server.py`: stdlib file server with PIN, thumbnails via macOS `sips`, `GET /api/list` (JSON) and HTTP Range on `/view` and `/files` (players seek).
+- `stash/`: second APK "BB File Manager" (internal name Stash, package `com.hari.stash`), a Cloud (drop-box) / Local (phone) browser with photo viewer, video player and a music player (`MusicService`, FLAC via the platform `MediaPlayer`), grid/list layout and select/delete (cloud delete moves to `shared/.trash/` via `POST /delete`). Same rules as the Android app (API 17 only, no AndroidX, v1 signing, reuses `android/keys/debug.jks`). Build with `./stash/build.sh [--publish]`; version in `stash/VERSION`, APK is `stash-<x.y.z>.apk`.
 
 ## Gotchas learned the hard way
 

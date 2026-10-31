@@ -11,6 +11,7 @@ node_modules/
 
 # Build output and the local signing key
 android/build/
+stash/build/
 android/keys/
 android/libs/*.jar
 *.apk
@@ -19,6 +20,7 @@ android/libs/*.jar
 # Launcher icon: the artwork is not redistributed; build.sh draws a placeholder (see README)
 android/tools/icon-source.png
 android/res/drawable*/ic_launcher.png
+stash/res/drawable*/ic_launcher.png
 
 # Files shared through the drop-box (photos, APKs) and the older-versions folder
 dropbox/shared/
