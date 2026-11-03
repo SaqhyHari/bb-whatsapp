@@ -405,6 +405,8 @@ async function infoOf(chatId) {
 const NOTICE_TYPES = new Set(['e2e_notification', 'notification_template']);
 const realCache = new Map();
 async function isRealChat(c) {
+  // the Status feed (status@broadcast) and channels are chats to WhatsApp Web but not conversations the app can open
+  if (!CHAT_ID.test(c.id._serialized)) { console.log('chat list: skipping', c.id._serialized.replace(/\d{6,}/g, '<digits>')); return false; }
   const last = c.lastMessage;
   if (last && !NOTICE_TYPES.has(last.type)) return true;
   const id = c.id._serialized;
